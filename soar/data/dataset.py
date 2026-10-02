@@ -119,6 +119,10 @@ class SegmentationDataset(Dataset):
             self.data_root / sub / f"{sub}_images",
             self.data_root / f"{sub}_images",
             self.data_root / sub,
+            self.data_root / "images" / "val2017",
+            self.data_root / "images" / "train2017",
+            self.data_root / "val2017",
+            self.data_root / "train2017",
             self.data_root / "images",
             self.data_root,
         ]
@@ -135,6 +139,13 @@ class SegmentationDataset(Dataset):
         for ext in self.SUPPORTED_EXTENSIONS:
             files.update(self.image_dir.glob(f"*{ext}"))
             files.update(self.image_dir.glob(f"*{ext.upper()}"))
+        
+        # If no images found directly, search one level down (e.g. images/val2017/)
+        if not files:
+            for ext in self.SUPPORTED_EXTENSIONS:
+                files.update(self.image_dir.glob(f"*/*{ext}"))
+                files.update(self.image_dir.glob(f"*/*{ext.upper()}"))
+
         return sorted(files)
 
     def _load_annotations(self, annotation_file: Optional[str], mask_dir: Optional[str]) -> None:
@@ -181,6 +192,10 @@ class SegmentationDataset(Dataset):
 
         # 5. Fall back to default candidate COCO JSON files
         candidate_files = [
+            self.data_root / "annotations" / "instances_val2017.json",
+            self.data_root / "annotations" / "instances_train2017.json",
+            self.data_root / "instances_val2017.json",
+            self.data_root / "instances_train2017.json",
             self.data_root / "train" / "MAGFiLO_1.0_Annotations_kaggle2026_train.json",
             self.data_root / "MAGFiLO_1.0_Annotations_kaggle2026_train.json",
             self.data_root / "train" / "annotations.json",
@@ -389,7 +404,7 @@ class SegmentationDataset(Dataset):
             if img_path is None:
                 return None
             img = self._read_image(img_path)
-            h, w = img.shape[-2:]
+            h, w = img.shape[:2]
 
         mask = np.zeros((h, w), dtype=np.float32)
         for ann in polys:
@@ -413,7 +428,7 @@ class SegmentationDataset(Dataset):
             if img_path is None:
                 return None
             img = self._read_image(img_path)
-            h, w = img.shape[-2:]
+            h, w = img.shape[:2]
 
         label_file = Path(self.annotations[img_name])
         annotations = self._parse_yolo_annotation(label_file, w, h)
@@ -450,7 +465,7 @@ class SegmentationDataset(Dataset):
             meta = {}
 
         meta = dict(meta) if meta else {}
-        meta['raw_shape'] = raw_img.shape[-2:]
+        meta['raw_shape'] = raw_img.shape[:2]
 
         if processed_img.ndim == 2:
             processed_img = processed_img[np.newaxis, ...]
