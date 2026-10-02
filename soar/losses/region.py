@@ -192,3 +192,38 @@ class DiceBCELoss(BaseLoss):
         bce = self.bce_loss_fn(pred, target, valid_mask)
         dice = self.dice_loss_fn(pred, target, valid_mask)
         return self.weight * (self.bce_weight * bce + self.dice_weight * dice)
+
+
+class DiceFocalLoss(BaseLoss):
+    """
+    Composite Dice and Focal loss engineered specifically for high-resolution dense segmentation.
+    Pairs scale-invariant soft Dice with focal modulation to suppress massive background
+    gradients while focusing optimization on sparse, hard foreground boundaries.
+    """
+
+    def __init__(
+        self,
+        weight: float = 1.0,
+        dice_weight: float = 1.0,
+        focal_weight: float = 1.0,
+        gamma: float = 2.0,
+        alpha: float = 0.25,
+        smooth: float = 1.0,
+    ):
+        super().__init__(weight)
+        self.dice_weight = dice_weight
+        self.focal_weight = focal_weight
+        self.focal_loss_fn = FocalLoss(weight=1.0, gamma=gamma, alpha=alpha)
+        self.dice_loss_fn = DiceLoss(weight=1.0, smooth=smooth)
+
+    def forward(
+        self,
+        pred: torch.Tensor,
+        target: torch.Tensor,
+        valid_mask: Optional[torch.Tensor] = None,
+        **kwargs
+    ) -> torch.Tensor:
+        focal = self.focal_loss_fn(pred, target, valid_mask)
+        dice = self.dice_loss_fn(pred, target, valid_mask)
+        return self.weight * (self.focal_weight * focal + self.dice_weight * dice)
+

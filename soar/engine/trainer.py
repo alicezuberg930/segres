@@ -60,8 +60,10 @@ class BaseTrainer:
         balance_sampler: bool = False,
         positive_ratio: float = 0.7,
         sampler_mode: str = "hybrid",
+        loss_cfg: Optional[Dict[str, Any]] = None,
     ):
         self.model_cfg = model_cfg
+        self.loss_cfg = loss_cfg
         self.dataset_cfg = DatasetConfig.resolve(data_root)
         self.data_root = self.dataset_cfg.root_path
         self.img_size = img_size
@@ -173,7 +175,10 @@ class BaseTrainer:
         )
 
     def _setup_loss(self):
-        self.criterion = CompositeSegmentationLoss()
+        if self.loss_cfg:
+            self.criterion = CompositeSegmentationLoss.from_config(self.loss_cfg)
+        else:
+            self.criterion = CompositeSegmentationLoss()
 
     def _setup_data(self):
         train_image_dir = self.dataset_cfg.train_images

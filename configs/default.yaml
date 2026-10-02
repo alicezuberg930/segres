@@ -45,29 +45,31 @@ predict:
   close_kernel: 3         # Morphological closing kernel size
   output_dir: "predictions" # Output directory for predictions
 
-# Loss settings
+# High-Resolution Loss settings
 loss:
-  # Region loss (always active)
+  # Region loss (engineered for <1% foreground pixel sparsity)
   region:
-    type: dice_bce  # Options: bce, dice, focal, tversky, focal_tversky, dice_bce
+    type: dice_focal  # Options: dice_focal, dice_bce, focal, dice, tversky, focal_tversky
     weight: 1.0
     dice_weight: 1.0
-    bce_weight: 1.0
-    bce_pos_weight: 1.0
+    focal_weight: 1.0
+    gamma: 2.0
+    alpha: 0.25
   
-  # Boundary loss (optional)
+  # Boundary loss (high-frequency edge precision for 1024x1024+ detail)
   boundary:
-    enabled: false
-    type: boundary_bce  # Options: boundary_bce, boundary_dice, boundary_dist
-    weight: 0.2
-  
-  # Structure loss (optional, for thin structures)
-  structure:
-    enabled: false
-    type: cldice  # Options: cldice, skeleton
+    enabled: true
+    type: boundary_dice  # Options: boundary_dice, boundary_dist, boundary_bce
     weight: 0.3
-    n_iter: 3
   
-  # Deep supervision (optional)
+  # Topological Structure loss (connectivity preservation for thin filaments & roads)
+  structure:
+    enabled: true
+    type: cldice  # Options: cldice, skeleton
+    weight: 0.2
+    warmup_epochs: 3
+  
+  # Deep supervision (optional multi-scale feature alignment)
   deep_supervision: false
   deep_supervision_weights: [0.4, 0.3, 0.2, 0.1]
+

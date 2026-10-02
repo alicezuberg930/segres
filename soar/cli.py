@@ -115,6 +115,7 @@ def parse_args():
     fs_parser.add_argument("--annotation-file", type=str, default=None, help="Annotation file path")
     fs_parser.add_argument("--pretrained-backbone", type=str, default=None, help="Pretrained SOAR backbone checkpoint path")
     fs_parser.add_argument("--freeze-backbone", action="store_true", help="Freeze backbone weights and train only prototype fusion head")
+    fs_parser.add_argument("--cfg", type=str, default="configs/default.yaml", help="Default configuration YAML with loss settings")
 
     return parser.parse_args()
 
@@ -143,6 +144,14 @@ def train(args):
         preprocess_config = PreprocessConfig.native_resolution()
     else:  # standard
         preprocess_config = PreprocessConfig.standard_training(img_size=tuple(args.img_size))
+
+    # Parse high-resolution domain loss configuration from cfg YAML
+    loss_cfg = None
+    if getattr(args, "cfg", None):
+        cfg_path = resolve_config_path(args.cfg)
+        if cfg_path and Path(cfg_path).exists():
+            yaml_cfg = load_config(cfg_path)
+            loss_cfg = yaml_cfg.get("loss")
     
     # Initialize trainer
     trainer = BaseTrainer(
@@ -168,6 +177,7 @@ def train(args):
         balance_sampler=args.balance_sampler,
         positive_ratio=args.positive_ratio,
         sampler_mode=args.sampler_mode,
+        loss_cfg=loss_cfg,
     )
     
     # Start training
@@ -266,6 +276,14 @@ def predict(args):
 def few_shot_train(args):
     """Train a few-shot / one-shot segmentation model (FS-SOAR)."""
     from .engine.few_shot_trainer import FewShotTrainer
+
+    loss_cfg = None
+    if getattr(args, "cfg", None):
+        cfg_path = resolve_config_path(args.cfg)
+        if cfg_path and Path(cfg_path).exists():
+            yaml_cfg = load_config(cfg_path)
+            loss_cfg = yaml_cfg.get("loss")
+
     trainer = FewShotTrainer(
         model_cfg=args.model,
         data_root=args.data,
@@ -288,6 +306,7 @@ def few_shot_train(args):
         annotation_file=args.annotation_file,
         pretrained_backbone=args.pretrained_backbone,
         freeze_backbone=args.freeze_backbone,
+        loss_cfg=loss_cfg,
     )
     trainer.train()
 

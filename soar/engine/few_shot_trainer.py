@@ -59,6 +59,7 @@ class FewShotTrainer:
         annotation_file: Optional[str] = None,
         pretrained_backbone: Optional[str] = None,
         freeze_backbone: bool = False,
+        loss_cfg: Optional[Dict[str, Any]] = None,
     ):
         self.device = torch.device(device if torch.cuda.is_available() and device == "cuda" else "cpu")
         self.shots = max(1, shots)
@@ -76,6 +77,7 @@ class FewShotTrainer:
         self.workers = workers
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.loss_cfg = loss_cfg
 
         # Resolve dataset configuration
         self.dataset_cfg = DatasetConfig.resolve(data_root)
@@ -101,7 +103,10 @@ class FewShotTrainer:
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.epochs, eta_min=1e-6)
 
         # 3. Setup Loss & AMP
-        self.criterion = SegmentationLoss()
+        if self.loss_cfg:
+            self.criterion = SegmentationLoss.from_config(self.loss_cfg)
+        else:
+            self.criterion = SegmentationLoss()
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
 
         # 4. Setup Data
@@ -259,8 +264,8 @@ class FewShotTrainer:
             total_loss += loss.item()
             pbar.set_postfix({
                 "loss": f"{loss.item():.4f}",
-                "bnd": f"{loss_parts.get('boundary_loss', 0.0):.3f}",
-                "cldice": f"{loss_parts.get('cldice_loss', 0.0):.3f}",
+                "bnd": f"{float(loss_parts.get('boundary', loss_parts.get('boundary_loss', 0.0))):.3f}",
+                "cldice": f"{float(loss_parts.get('cldice', loss_parts.get('cldice_loss', 0.0))):.3f}",
                 "lr": f"{self.optimizer.param_groups[0]['lr']:.2e}",
             })
 
