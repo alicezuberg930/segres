@@ -146,7 +146,7 @@ class Fuse(nn.Module):
         a = self.skip(skip)
         b = F.interpolate(self.low(low), size=a.shape[-2:], mode="bilinear", align_corners=False)
         g = self.gate(a + b)
-        return self.out(g * a + (1.0 - g) * b)
+        return self.out(b + g * (a - b))
 
 
 class Agg(nn.Module):

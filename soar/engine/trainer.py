@@ -333,7 +333,7 @@ class BaseTrainer:
 
         pbar_desc = f"{f'{epoch + 1}/{self.epochs}':>10}"
         iterator = (
-            tqdm(self.train_loader, desc=pbar_desc, leave=False, bar_format="{desc} {percentage:3.0f}%|{bar:10}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]")
+            tqdm(self.train_loader, desc=pbar_desc, leave=True, bar_format="{desc} {percentage:3.0f}%|{bar:10}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]")
             if self.rank == 0
             else self.train_loader
         )
@@ -381,7 +381,7 @@ class BaseTrainer:
             loss_val = loss.item()
             total_loss += loss_val
 
-            if self.rank == 0 and ((i + 1) % 10 == 0 or (i + 1) == n_batches):
+            if self.rank == 0 and (i == 0 or (i + 1) % self.accumulate_grad_batches == 0 or (i + 1) == n_batches):
                 mem = f"{torch.cuda.memory_reserved() / 1E9:.2f}G" if torch.cuda.is_available() else "0G"
                 region_l = float(loss_parts.get("region", 0.0))
                 bnd_l = float(loss_parts.get("boundary", 0.0))

@@ -7,6 +7,7 @@ from typing import Optional
 from .base import BaseLoss
 
 
+@torch.jit.script
 def soft_erode(x: torch.Tensor) -> torch.Tensor:
     """Soft morphological erosion via directional min-pooling."""
     neg_x = -x
@@ -15,18 +16,19 @@ def soft_erode(x: torch.Tensor) -> torch.Tensor:
     return torch.min(p1, p2)
 
 
+@torch.jit.script
 def soft_dilate(x: torch.Tensor) -> torch.Tensor:
     """Soft morphological dilation via max-pooling."""
     return F.max_pool2d(x, kernel_size=3, stride=1, padding=1)
 
 
+@torch.jit.script
 def soft_skeletonize(x: torch.Tensor, n_iter: int = 3) -> torch.Tensor:
     """Differentiable soft skeletonization for topological connectivity preservation."""
     skel = torch.zeros_like(x)
     curr = x
     for _ in range(n_iter):
         eroded = soft_erode(curr)
-        # open(curr) = dilate(erode(curr)) = dilate(eroded)
         opened = soft_dilate(eroded)
         delta = F.relu(curr - opened)
         skel = skel + delta * (1.0 - skel)

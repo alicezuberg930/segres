@@ -520,7 +520,7 @@ class SegmentationDataset(Dataset):
 
         return np.ascontiguousarray(mask)
 
-    def _get_processed_data(self, path: Path) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[Dict]]:
+    def _get_processed_data(self, path: Path) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], Optional[Dict]]:
         """Retrieve preprocessed image and geometric mask with caching."""
         key = str(path)
         if key in self._cache_store:
@@ -553,7 +553,37 @@ class SegmentationDataset(Dataset):
         if valid_mask is not None:
             valid_mask = np.ascontiguousarray(valid_mask)
 
-        res = (processed_img, valid_mask, meta)
+        # Preprocess and cache ground truth mask
+        mask = None
+        if self.has_gt:
+            mask = self._read_mask(path, raw_shape=meta.get('raw_shape'))
+            target_h, target_w = (processed_img.shape[0], processed_img.shape[1]) if (processed_img.ndim == 3 and processed_img.shape[-1] in (1, 3, 4)) else processed_img.shape[-2:]
+            if mask is None:
+                if self.num_classes == 1:
+                    mask = np.zeros((target_h, target_w), dtype=np.float32)
+                else:
+                    mask = np.zeros((target_h, target_w, self.num_classes), dtype=np.float32)
+
+            if valid_mask is None:
+                valid_mask = np.ones((target_h, target_w), dtype=np.float32)
+
+            if self.mask_preprocessor is not None:
+                mask_processed, _, _ = self.mask_preprocessor(mask)
+                mask = mask_processed
+                if self.num_classes == 1:
+                    mask = mask.squeeze()
+                    if mask.ndim != 2:
+                        mask = mask.reshape(target_h, target_w) if mask.size == target_h * target_w else mask
+                    if mask.shape != (target_h, target_w):
+                        mask = cv2.resize(mask, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
+                else:
+                    if mask.shape[:2] != (target_h, target_w):
+                        resized = [cv2.resize(mask[..., c], (target_w, target_h), interpolation=cv2.INTER_NEAREST) for c in range(self.num_classes)]
+                        mask = np.stack(resized, axis=-1)
+
+            mask = np.ascontiguousarray(mask)
+
+        res = (processed_img, mask, valid_mask, meta)
         if len(self._cache_store) < self.cache_limit:
             self._cache_store[key] = res
 
@@ -564,54 +594,24 @@ class SegmentationDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         img_path = self.image_files[idx]
-        img, valid_mask, meta = self._get_processed_data(img_path)
+        img, mask, valid_mask, meta = self._get_processed_data(img_path)
 
         # Handle ground truth masks for train/val splits
         if self.has_gt:
-            mask = self._read_mask(img_path, raw_shape=meta.get('raw_shape') if meta else None)
-            target_h, target_w = (img.shape[0], img.shape[1]) if (img.ndim == 3 and img.shape[-1] in (1, 3, 4)) else img.shape[-2:]
-            if mask is None:
-                if self.num_classes == 1:
-                    mask = np.zeros((target_h, target_w), dtype=np.float32)
-                else:
-                    mask = np.zeros((target_h, target_w, self.num_classes), dtype=np.float32)
-
-            if valid_mask is None:
-                valid_mask = np.ones((target_h, target_w), dtype=np.float32)
-
-            # Mask preprocessing via nearest neighbor interpolation
-            if self.mask_preprocessor is not None:
-                mask_processed, _, mask_meta = self.mask_preprocessor(mask)
-                mask = mask_processed
-
-                if self.num_classes == 1:
-                    mask = mask.squeeze()
-                    if mask.ndim != 2:
-                        if mask.ndim == 1 and mask.shape[0] == target_h * target_w:
-                            mask = mask.reshape(target_h, target_w)
-                        else:
-                            raise ValueError(
-                                f"Cannot reshape mask to 2D. Target: {target_h}x{target_w}, shape: {mask.shape}"
-                            )
-                    if mask.shape != (target_h, target_w):
-                        mask = cv2.resize(mask, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
-                else:
-                    if mask.shape[:2] != (target_h, target_w):
-                        resized = [cv2.resize(mask[..., c], (target_w, target_h), interpolation=cv2.INTER_NEAREST) for c in range(self.num_classes)]
-                        mask = np.stack(resized, axis=-1)
-
-            # Synchronized data augmentations across image, mask, and valid_mask
+            # Clone cached references when augmenting to prevent cache corruption
             if self.augment:
-                # Ensure img_np is HWC (H, W, C) or HW (H, W) for OpenCV augmentations
-                if img.ndim == 3 and img.shape[0] in (1, 3, 4) and img.shape[-1] not in (1, 3, 4):
-                    img_np = np.transpose(img, (1, 2, 0))
-                else:
-                    img_np = img
+                img_np = img.copy()
+                mask_np = mask.copy() if mask is not None else None
+                vm_np = valid_mask.copy() if valid_mask is not None else None
 
-                m_hwc = mask if mask.ndim == 3 else mask[..., None]
-                vm_2d = valid_mask.squeeze()
+                # Ensure img_np is HWC for OpenCV augmentations
+                if img_np.ndim == 3 and img_np.shape[0] in (1, 3, 4) and img_np.shape[-1] not in (1, 3, 4):
+                    img_np = np.transpose(img_np, (1, 2, 0))
+
+                m_hwc = mask_np if (mask_np is not None and mask_np.ndim == 3) else (mask_np[..., None] if mask_np is not None else None)
+                vm_2d = vm_np.squeeze() if vm_np is not None else np.ones(img_np.shape[:2], dtype=np.float32)
                 vm_hwc = vm_2d[..., None]
-                stacked_masks = np.concatenate([m_hwc, vm_hwc], axis=-1)
+                stacked_masks = np.concatenate([m_hwc, vm_hwc], axis=-1) if m_hwc is not None else vm_hwc
 
                 img_np, stacked_masks = self.augmentation(img_np, stacked_masks)
                 img = img_np
@@ -623,25 +623,27 @@ class SegmentationDataset(Dataset):
                 valid_mask = valid_mask.squeeze(-1)
 
             img = np.ascontiguousarray(img)
-            mask = np.ascontiguousarray(mask)
-            valid_mask = np.ascontiguousarray(valid_mask)
+            mask = np.ascontiguousarray(mask) if mask is not None else None
+            valid_mask = np.ascontiguousarray(valid_mask) if valid_mask is not None else None
 
-            if mask.ndim == 2:
-                mask = mask[np.newaxis, ...]
-            elif mask.ndim == 3 and mask.shape[-1] == self.num_classes:
-                mask = np.transpose(mask, (2, 0, 1))
+            if mask is not None:
+                if mask.ndim == 2:
+                    mask = mask[np.newaxis, ...]
+                elif mask.ndim == 3 and mask.shape[-1] == self.num_classes:
+                    mask = np.transpose(mask, (2, 0, 1))
 
-            if valid_mask.ndim == 2:
-                valid_mask = valid_mask[np.newaxis, ...]
-            elif valid_mask.ndim == 3 and valid_mask.shape[-1] == 1:
-                valid_mask = np.transpose(valid_mask, (2, 0, 1))
+            if valid_mask is not None:
+                if valid_mask.ndim == 2:
+                    valid_mask = valid_mask[np.newaxis, ...]
+                elif valid_mask.ndim == 3 and valid_mask.shape[-1] == 1:
+                    valid_mask = np.transpose(valid_mask, (2, 0, 1))
 
             sample = {
                 'image': torch.from_numpy(img).float(),
-                'mask': torch.from_numpy(mask).float(),
-                'valid_mask': torch.from_numpy(valid_mask).float(),
+                'mask': torch.from_numpy(mask).float() if mask is not None else torch.zeros((self.num_classes, img.shape[-2], img.shape[-1])),
+                'valid_mask': torch.from_numpy(valid_mask).float() if valid_mask is not None else torch.ones((1, img.shape[-2], img.shape[-1])),
                 'image_id': img_path.stem,
-                'has_object': bool(mask.any() > 0),
+                'has_object': bool((mask > 0).any()) if mask is not None else False,
                 'meta': meta or {},
             }
         else:

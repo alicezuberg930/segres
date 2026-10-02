@@ -57,8 +57,10 @@ class RandomRotate(BaseAugmentation):
 
         mask_out = None
         if mask is not None:
-            # Handle multi-channel masks (e.g. (H, W, 2) stacked mask + valid_mask)
-            if mask.ndim == 3:
+            # Handle multi-channel masks natively in C++ when <= 4 channels
+            if mask.ndim == 3 and mask.shape[-1] <= 4:
+                mask_out = cv2.warpAffine(mask, rot_mat, (w, h), flags=cv2.INTER_NEAREST)
+            elif mask.ndim == 3:
                 warped_channels = [
                     cv2.warpAffine(mask[..., c], rot_mat, (w, h), flags=cv2.INTER_NEAREST)
                     for c in range(mask.shape[-1])
@@ -71,7 +73,7 @@ class RandomRotate(BaseAugmentation):
 
 
 class RandomFlip(BaseAugmentation):
-    """Random horizontal and vertical reflection."""
+    """Random horizontal and vertical reflection via native OpenCV."""
 
     def __init__(self, p: float = 0.5, horizontal: bool = True, vertical: bool = True):
         super().__init__(p)
@@ -84,15 +86,18 @@ class RandomFlip(BaseAugmentation):
         h_flip = self.horizontal and random.random() < 0.5
         v_flip = self.vertical and random.random() < 0.5
 
-        if h_flip:
-            img = np.flip(img, axis=1)
+        if h_flip and v_flip:
+            img = cv2.flip(img, -1)
             if mask is not None:
-                mask = np.flip(mask, axis=1)
-
-        if v_flip:
-            img = np.flip(img, axis=0)
+                mask = cv2.flip(mask, -1)
+        elif h_flip:
+            img = cv2.flip(img, 1)
             if mask is not None:
-                mask = np.flip(mask, axis=0)
+                mask = cv2.flip(mask, 1)
+        elif v_flip:
+            img = cv2.flip(img, 0)
+            if mask is not None:
+                mask = cv2.flip(mask, 0)
 
         return np.ascontiguousarray(img), (
             np.ascontiguousarray(mask) if mask is not None else None
@@ -121,7 +126,8 @@ class RandomBrightnessContrast(BaseAugmentation):
         img_out = img.astype(np.float32) * brightness
         mean_val = float(img_out.mean())
         img_out = (img_out - mean_val) * contrast + mean_val
-        img_out = np.clip(img_out, 0.0, 1.0).astype(img.dtype)
+        max_limit = 1.0 if np.issubdtype(img.dtype, np.floating) else 255.0
+        img_out = np.clip(img_out, 0.0, max_limit).astype(img.dtype)
 
         return img_out, mask
 
