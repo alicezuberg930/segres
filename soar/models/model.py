@@ -225,10 +225,11 @@ class SegmentationModel(nn.Module):
 
         self._check(ch, verbose)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_features: bool = False) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Forward pass with auto-padding to multiples of 32 and eager activation deallocation.
         Returns full-resolution logits matching input spatial dimensions (B, nc, H, W).
+        If return_features=True, returns tuple of (logits, penultimate_features).
         """
         h, w = x.shape[-2:]
         ph = (-h) % DIVISOR
@@ -238,8 +239,10 @@ class SegmentationModel(nn.Module):
 
         rem = dict(self._consumer_counts)
         y: Dict[int, torch.Tensor] = {}
+        penultimate_feat = None
+        total_layers = len(self.model)
 
-        for m in self.model:
+        for idx, m in enumerate(self.model):
             if m.f != -1:
                 if isinstance(m.f, int):
                     x_in = y[m.f]
@@ -258,11 +261,57 @@ class SegmentationModel(nn.Module):
                                 y.pop(j, None)
                 x = x_in
 
+            if idx == total_layers - 1:
+                penultimate_feat = x
+
             x = m(x)
             if m.i in self.save:
                 y[m.i] = x
 
-        return x[..., :h, :w]
+        logits = x[..., :h, :w]
+        if return_features:
+            return logits, penultimate_feat
+        return logits
+
+    def extract_features(self, x: torch.Tensor) -> torch.Tensor:
+        """Extract high-resolution penultimate feature representation prior to SegHead."""
+        h, w = x.shape[-2:]
+        ph = (-h) % DIVISOR
+        pw = (-w) % DIVISOR
+        if ph or pw:
+            x = F.pad(x, (0, pw, 0, ph), mode="reflect" if (ph < h and pw < w) else "replicate")
+
+        rem = dict(self._consumer_counts)
+        y: Dict[int, torch.Tensor] = {}
+        total_layers = len(self.model)
+
+        for idx, m in enumerate(self.model):
+            if m.f != -1:
+                if isinstance(m.f, int):
+                    x_in = y[m.f]
+                    rem[m.f] -= 1
+                    if rem[m.f] == 0:
+                        y.pop(m.f, None)
+                else:
+                    x_in = []
+                    for j in m.f:
+                        if j == -1:
+                            x_in.append(x)
+                        else:
+                            x_in.append(y[j])
+                            rem[j] -= 1
+                            if rem[j] == 0:
+                                y.pop(j, None)
+                x = x_in
+
+            if idx == total_layers - 1:
+                return x
+
+            x = m(x)
+            if m.i in self.save:
+                y[m.i] = x
+
+        return x
 
     def n_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
