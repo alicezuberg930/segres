@@ -133,6 +133,75 @@ def test_dataset_with_augmentations():
             assert sample["valid_mask"].shape == (1, 1024, 1024), f"Bad valid_mask shape: {sample['valid_mask'].shape}"
 
 
+def test_multiclass_segmentation():
+    """Verify end-to-end multi-class pipeline: model, dataset, losses, and validator."""
+    from soar.models import SegmentationModel
+    from soar.losses import SegmentationLoss
+    from soar.engine.validator import BaseValidator
+
+    # 1. Model test
+    model = SegmentationModel(cfg="configs/models/soar_nano1.yaml", ch=3, nc=4, verbose=False)
+    x = torch.randn(1, 3, 512, 512)
+    out = model(x)
+    assert out.shape == (1, 4, 512, 512), f"Expected (1, 4, 512, 512), got {out.shape}"
+
+    # 2. Loss test
+    criterion = SegmentationLoss()
+    target = torch.randint(0, 2, (1, 4, 512, 512)).float()
+    valid_mask = torch.ones(1, 1, 512, 512).float()
+    loss, parts = criterion(out, target, valid_mask, epoch=0)
+    assert not torch.isnan(loss) and loss.item() > 0, f"Loss error: {loss.item()}"
+
+    # 3. Multi-class Dataset test
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        train_dir = tmp_path / "train" / "train_images"
+        labels_dir = tmp_path / "train" / "labels"
+        train_dir.mkdir(parents=True, exist_ok=True)
+        labels_dir.mkdir(parents=True, exist_ok=True)
+
+        img = np.random.randint(0, 256, (640, 480, 3), dtype=np.uint8)
+        cv2.imwrite(str(train_dir / "img1.png"), img)
+
+        # Write YOLO multi-class label: class 0, class 1, class 3
+        with open(labels_dir / "img1.txt", "w") as f:
+            f.write("0 0.2 0.2 0.3 0.2 0.3 0.3 0.2 0.3\n")
+            f.write("2 0.5 0.5 0.7 0.5 0.7 0.7 0.5 0.7\n")
+
+        ds = SegmentationDataset(
+            data_root=tmp_path,
+            split="train",
+            img_size=(512, 512),
+            in_channels=3,
+            num_classes=4,
+            augment=True,
+        )
+        sample = ds[0]
+        assert sample["image"].shape == (3, 512, 512)
+        assert sample["mask"].shape == (4, 512, 512)
+        assert sample["mask"][0].sum() > 0, "Class 0 polygon should be rasterized"
+        assert sample["mask"][1].sum() == 0, "Class 1 should have 0 pixels"
+        assert sample["mask"][2].sum() > 0, "Class 2 polygon should be rasterized"
+        assert sample["mask"][3].sum() == 0, "Class 3 should have 0 pixels"
+
+        # 4. Validator test with multi-class loader
+        from torch.utils.data import DataLoader
+        from soar.data.dataset import collate_fn
+        val_loader = DataLoader(ds, batch_size=1, collate_fn=collate_fn)
+        validator = BaseValidator(
+            model=model,
+            data_root=str(tmp_path),
+            img_size=(512, 512),
+            dataloader=val_loader,
+            num_classes=4,
+            device="cpu",
+        )
+        metrics = validator.validate()
+        assert "iou" in metrics
+        assert "class_ious" in metrics
+        assert len(metrics["class_ious"]) == 4
+
+
 if __name__ == "__main__":
     print("Running test_offline_rasterization_and_dataset_loading...")
     test_offline_rasterization_and_dataset_loading()
@@ -142,5 +211,8 @@ if __name__ == "__main__":
     test_normalize01_uint8_fastpath()
     print("Running test_dataset_with_augmentations...")
     test_dataset_with_augmentations()
-    print("All Phase 1 optimization unit tests passed successfully!")
+    print("Running test_multiclass_segmentation...")
+    test_multiclass_segmentation()
+    print("All Phase 1 optimization and multi-class tests passed successfully!")
+
 

@@ -38,8 +38,10 @@ class BaseLoss(nn.Module):
         loss: torch.Tensor,
         valid_mask: Optional[torch.Tensor]
     ) -> torch.Tensor:
-        """Apply valid mask to loss if provided."""
+        """Apply valid mask to loss if provided with support for multi-channel losses."""
         if valid_mask is not None:
-            loss = loss * valid_mask
-            return loss.sum() / valid_mask.sum().clamp_min(1.0)
+            vmask = valid_mask.expand_as(loss) if valid_mask.shape != loss.shape else valid_mask
+            loss = loss * vmask
+            return loss.sum() / vmask.sum().clamp_min(1.0)
         return loss.mean()
+

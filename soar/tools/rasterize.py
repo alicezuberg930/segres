@@ -12,20 +12,21 @@ from tqdm import tqdm
 
 
 def rasterize_coco_image(
-    task: Tuple[str, int, int, List[List[float]], str]
+    task: Tuple[str, int, int, List[Tuple[List[float], int]], str]
 ) -> Tuple[str, bool]:
     """
     Worker task: rasterize polygons for a single image and save as uint8 PNG.
-    task: (file_name, width, height, polygon_list, output_path)
+    task: (file_name, width, height, polygon_entries, output_path)
+    where polygon_entries is a list of (polygon, color_value).
     """
-    file_name, width, height, polygons, out_path = task
+    file_name, width, height, polygon_entries, out_path = task
     mask = np.zeros((height, width), dtype=np.uint8)
 
     has_foreground = False
-    for poly in polygons:
+    for poly, color_val in polygon_entries:
         if len(poly) >= 6:
             pts = np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
-            cv2.fillPoly(mask, [pts], color=255)
+            cv2.fillPoly(mask, [pts], color=int(color_val))
             has_foreground = True
 
     # Fast PNG compression level 1 for maximum I/O throughput
@@ -38,9 +39,12 @@ def rasterize_coco_dataset(
     output_dir: str | Path,
     image_dir: Optional[str | Path] = None,
     num_workers: int = 4,
+    num_classes: int = 1,
 ) -> Dict[str, Any]:
     """
-    Parse COCO JSON annotations and pre-rasterize binary mask PNGs in parallel.
+    Parse COCO JSON annotations and pre-rasterize binary or multi-class mask PNGs in parallel.
+    For num_classes == 1, pixels are 0 (bg) and 255 (fg).
+    For num_classes > 1, pixels are 0 (bg) and class_id + 1 (1-indexed class label).
     """
     ann_path = Path(annotation_file)
     out_dir = Path(output_dir)
@@ -49,6 +53,13 @@ def rasterize_coco_dataset(
     print(f"Loading COCO annotations from {ann_path}...")
     with open(ann_path, "r", encoding="utf-8") as f:
         coco = json.load(f)
+
+    # Build category map if multiclass
+    cat_map: Dict[int, int] = {}
+    if num_classes > 1:
+        categories = sorted([cat["id"] for cat in coco.get("categories", []) if "id" in cat])
+        if categories:
+            cat_map = {cat_id: idx for idx, cat_id in enumerate(categories)}
 
     # Build image map: id -> (file_name, width, height)
     img_map: Dict[int, Dict[str, Any]] = {}
@@ -67,10 +78,12 @@ def rasterize_coco_dataset(
         if img_id not in img_map:
             continue
         seg = ann.get("segmentation", [])
+        cat_id = ann.get("category_id", 0)
+        color = 255 if num_classes == 1 else (cat_map.get(cat_id, cat_id if cat_id < num_classes else 0) + 1)
         if isinstance(seg, list):
             for poly in seg:
                 if isinstance(poly, list) and len(poly) >= 6:
-                    img_map[img_id]["polygons"].append(poly)
+                    img_map[img_id]["polygons"].append((poly, color))
 
     # Check for missing width/height from JSON; if missing, inspect image file
     tasks = []
@@ -123,6 +136,7 @@ def main():
     parser.add_argument("--annotation-file", type=str, required=True, help="Path to COCO JSON annotations")
     parser.add_argument("--output-dir", type=str, required=True, help="Directory to save pre-rasterized PNG masks")
     parser.add_argument("--image-dir", type=str, default=None, help="Directory of source images (if width/height missing from JSON)")
+    parser.add_argument("--num-classes", type=int, default=1, help="Number of semantic classes (1 for binary)")
     parser.add_argument("--workers", type=int, default=os.cpu_count() or 4, help="Number of worker processes")
     args = parser.parse_args()
 
@@ -131,6 +145,7 @@ def main():
         output_dir=args.output_dir,
         image_dir=args.image_dir,
         num_workers=args.workers,
+        num_classes=args.num_classes,
     )
 
 

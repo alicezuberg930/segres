@@ -20,11 +20,12 @@ class BoundaryBCELoss(BaseLoss):
         self.register_buffer("sobel_y", ky)
 
     def _sobel_edges(self, x: torch.Tensor) -> torch.Tensor:
-        sx = self.sobel_x.to(device=x.device, dtype=torch.float32)
-        sy = self.sobel_y.to(device=x.device, dtype=torch.float32)
+        C = x.shape[1]
+        sx = self.sobel_x.repeat(C, 1, 1, 1).to(device=x.device, dtype=torch.float32)
+        sy = self.sobel_y.repeat(C, 1, 1, 1).to(device=x.device, dtype=torch.float32)
         x_f32 = x.float()
-        gx = F.conv2d(x_f32, sx, padding=1)
-        gy = F.conv2d(x_f32, sy, padding=1)
+        gx = F.conv2d(x_f32, sx, padding=1, groups=C)
+        gy = F.conv2d(x_f32, sy, padding=1, groups=C)
         return torch.sqrt(gx.pow(2) + gy.pow(2) + 1e-8)
 
     def forward(
@@ -55,11 +56,12 @@ class BoundaryDiceLoss(BaseLoss):
         self.register_buffer("sobel_y", ky)
 
     def _sobel_edges(self, x: torch.Tensor) -> torch.Tensor:
-        sx = self.sobel_x.to(device=x.device, dtype=torch.float32)
-        sy = self.sobel_y.to(device=x.device, dtype=torch.float32)
+        C = x.shape[1]
+        sx = self.sobel_x.repeat(C, 1, 1, 1).to(device=x.device, dtype=torch.float32)
+        sy = self.sobel_y.repeat(C, 1, 1, 1).to(device=x.device, dtype=torch.float32)
         x_f32 = x.float()
-        gx = F.conv2d(x_f32, sx, padding=1)
-        gy = F.conv2d(x_f32, sy, padding=1)
+        gx = F.conv2d(x_f32, sx, padding=1, groups=C)
+        gy = F.conv2d(x_f32, sy, padding=1, groups=C)
         return torch.sqrt(gx.pow(2) + gy.pow(2) + 1e-8)
 
     def forward(
@@ -75,11 +77,11 @@ class BoundaryDiceLoss(BaseLoss):
         edge_pred = self._sobel_edges(prob)
 
         if valid_mask is not None:
-            vmask = valid_mask.float()
+            vmask = valid_mask.float().expand_as(edge_pred) if valid_mask.shape != edge_pred.shape else valid_mask.float()
             edge_pred = edge_pred * vmask
             edge_target = edge_target * vmask
 
-        dims = tuple(range(1, edge_pred.ndim))
+        dims = (-2, -1)
         inter = torch.sum(edge_pred * edge_target, dim=dims)
         cardinality = torch.sum(edge_pred, dim=dims) + torch.sum(edge_target, dim=dims)
         dice = (2.0 * inter + self.smooth) / (cardinality + self.smooth).clamp_min(1e-7)
@@ -118,16 +120,20 @@ class BoundaryDistLoss(BaseLoss):
     ) -> torch.Tensor:
         prob = torch.sigmoid(pred).float()
         batch_size = target.shape[0]
+        c_dim = target.shape[1]
 
         with torch.no_grad():
             target_cpu = target.detach().cpu().numpy()
-            sdfs = [self._compute_sdf(target_cpu[b, 0]) for b in range(batch_size)]
-            sdf_tensor = torch.from_numpy(np.stack(sdfs, axis=0)).unsqueeze(1).to(device=pred.device, dtype=torch.float32)
+            sdfs = [
+                np.stack([self._compute_sdf(target_cpu[b, c]) for c in range(c_dim)], axis=0)
+                for b in range(batch_size)
+            ]
+            sdf_tensor = torch.from_numpy(np.stack(sdfs, axis=0)).to(device=pred.device, dtype=torch.float32)
 
         boundary_penalty = prob * sdf_tensor
 
         if valid_mask is not None:
-            vmask = valid_mask.float()
+            vmask = valid_mask.float().expand_as(boundary_penalty) if valid_mask.shape != boundary_penalty.shape else valid_mask.float()
             boundary_penalty = boundary_penalty * vmask
             return self.weight * (boundary_penalty.sum() / vmask.sum().clamp_min(1.0))
 

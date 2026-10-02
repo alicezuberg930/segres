@@ -39,11 +39,13 @@ class BaseValidator:
         num_workers: int = 2,
         save_dir: Optional[str] = None,
         dataloader: Optional[DataLoader] = None,
+        num_classes: int = 1,
     ):
         self.model = model
         self.data_root = Path(data_root)
         self.img_size = img_size
         self.batch_size = 1
+        self.num_classes = max(1, int(num_classes))
         self.device = torch.device(device if (device == "cuda" and torch.cuda.is_available()) else "cpu")
         self.num_workers = num_workers
         self.save_dir = Path(save_dir) if save_dir else None
@@ -53,7 +55,7 @@ class BaseValidator:
         self.model.eval()
 
         self.criterion = CompositeSegmentationLoss()
-        self.metrics: Dict[str, float] = {}
+        self.metrics: Dict[str, Any] = {}
 
     @property
     def val_loader(self) -> Optional[DataLoader]:
@@ -69,6 +71,7 @@ class BaseValidator:
             data_root=self.data_root,
             split=split,
             img_size=self.img_size,
+            num_classes=self.num_classes,
             augment=False,
             use_cache=True,
             auto=True,
@@ -89,21 +92,19 @@ class BaseValidator:
         if x.ndim == 2:
             return x.unsqueeze(0).unsqueeze(0)
         if x.ndim == 3:
-            return x.unsqueeze(1)
+            return x.unsqueeze(0)
         return x
 
     @torch.no_grad()
-    def validate(self) -> Dict[str, float]:
-        """Run validation with streaming O(1) memory metric computation."""
+    def validate(self) -> Dict[str, Any]:
+        """Run validation with streaming O(1) memory metric computation across arbitrary classes."""
         if self.dataloader is None:
             self.setup_data(split="val")
 
         self.model.eval()
-        # Streaming metric accumulator on-device (12 terms):
-        # [0: loss, 1: n_batches, 2: inter, 3: union, 4: pred_card, 5: gt_card,
-        #  6: b_inter, 7: b_union, 8: skel_prec_inter, 9: skel_prec_total,
-        #  10: skel_sens_inter, 11: skel_sens_total]
-        accum = torch.zeros(12, dtype=torch.float64, device=self.device)
+        accum = None
+        total_loss = 0.0
+        n_batches = 0
 
         is_rank_zero = (not dist.is_initialized()) or dist.get_rank() == 0
         pbar = (
@@ -119,84 +120,96 @@ class BaseValidator:
 
             preds = self.model(images)
             loss, _ = self.criterion(preds, masks, valid_masks, 0)
+            total_loss += float(loss.detach().item())
+            n_batches += 1
 
             probs = torch.sigmoid(preds)
             bin_preds = (probs >= 0.5).to(dtype=torch.float32)
             gt = masks.to(dtype=torch.float32)
 
             if valid_masks is not None:
-                vmask = valid_masks.to(dtype=torch.float32)
+                vmask = valid_masks.to(dtype=torch.float32).expand_as(bin_preds)
                 bin_preds = bin_preds * vmask
                 gt = gt * vmask
 
-            inter = (bin_preds * gt).sum()
-            union = (bin_preds + gt).clamp_max(1.0).sum()
-            pred_card = bin_preds.sum()
-            gt_card = gt.sum()
+            c_dim = preds.shape[1]
+            if accum is None:
+                # 10 terms per channel:
+                # [0: inter, 1: union, 2: pred_card, 3: gt_card,
+                #  4: b_inter, 5: b_union, 6: skel_prec_inter, 7: skel_prec_total,
+                #  8: skel_sens_inter, 9: skel_sens_total]
+                accum = torch.zeros((10, c_dim), dtype=torch.float64, device=self.device)
+
+            inter = (bin_preds * gt).sum(dim=(0, 2, 3))
+            union = (bin_preds + gt).clamp_max(1.0).sum(dim=(0, 2, 3))
+            pred_card = bin_preds.sum(dim=(0, 2, 3))
+            gt_card = gt.sum(dim=(0, 2, 3))
 
             # Boundary IoU
             b_pred = _extract_boundary(bin_preds, d=2)
             b_gt = _extract_boundary(gt, d=2)
-            b_inter = (b_pred * b_gt).sum()
-            b_union = (b_pred + b_gt).clamp_max(1.0).sum()
+            b_inter = (b_pred * b_gt).sum(dim=(0, 2, 3))
+            b_union = (b_pred + b_gt).clamp_max(1.0).sum(dim=(0, 2, 3))
 
             # clDice (Topological skeleton precision & sensitivity)
             skel_pred = soft_skeletonize(bin_preds, n_iter=2)
             skel_true = soft_skeletonize(gt, n_iter=2)
-            skel_prec_inter = (skel_pred * gt).sum()
-            skel_prec_total = skel_pred.sum()
-            skel_sens_inter = (skel_true * bin_preds).sum()
-            skel_sens_total = skel_true.sum()
+            skel_prec_inter = (skel_pred * gt).sum(dim=(0, 2, 3))
+            skel_prec_total = skel_pred.sum(dim=(0, 2, 3))
+            skel_sens_inter = (skel_true * bin_preds).sum(dim=(0, 2, 3))
+            skel_sens_total = skel_true.sum(dim=(0, 2, 3))
 
-            accum[0] += loss.detach()
-            accum[1] += 1.0
-            accum[2] += inter
-            accum[3] += union
-            accum[4] += pred_card
-            accum[5] += gt_card
-            accum[6] += b_inter
-            accum[7] += b_union
-            accum[8] += skel_prec_inter
-            accum[9] += skel_prec_total
-            accum[10] += skel_sens_inter
-            accum[11] += skel_sens_total
+            accum[0] += inter
+            accum[1] += union
+            accum[2] += pred_card
+            accum[3] += gt_card
+            accum[4] += b_inter
+            accum[5] += b_union
+            accum[6] += skel_prec_inter
+            accum[7] += skel_prec_total
+            accum[8] += skel_sens_inter
+            accum[9] += skel_sens_total
 
         # Synchronize metrics across distributed ranks
         if dist.is_initialized():
             dist.all_reduce(accum, op=dist.ReduceOp.SUM)
+            loss_tensor = torch.tensor([total_loss, float(n_batches)], dtype=torch.float64, device=self.device)
+            dist.all_reduce(loss_tensor, op=dist.ReduceOp.SUM)
+            total_loss = float(loss_tensor[0].item())
+            n_batches = int(loss_tensor[1].item())
 
-        vals = accum.cpu().tolist()
-        (
-            total_loss,
-            n_batches,
-            total_inter,
-            total_union,
-            total_pred,
-            total_gt,
-            total_b_inter,
-            total_b_union,
-            total_skel_prec_inter,
-            total_skel_prec_total,
-            total_skel_sens_inter,
-            total_skel_sens_total,
-        ) = vals
+        if accum is None:
+            return {}
 
-        iou = total_inter / max(total_union, 1e-7)
-        dice = (2.0 * total_inter) / max(total_pred + total_gt, 1e-7)
-        prec = total_inter / max(total_pred, 1e-7)
-        recall = total_inter / max(total_gt, 1e-7)
-        boundary_iou = (
-            1.0 if total_b_union == 0 else (total_b_inter / max(total_b_union, 1e-7))
-        )
+        total_inter = accum[0]
+        total_union = accum[1]
+        total_pred = accum[2]
+        total_gt = accum[3]
+        total_b_inter = accum[4]
+        total_b_union = accum[5]
+        total_skel_prec_inter = accum[6]
+        total_skel_prec_total = accum[7]
+        total_skel_sens_inter = accum[8]
+        total_skel_sens_total = accum[9]
+
+        class_ious = (total_inter / total_union.clamp_min(1e-7)).cpu().tolist()
+        class_dices = ((2.0 * total_inter) / (total_pred + total_gt).clamp_min(1e-7)).cpu().tolist()
+        class_prec = (total_inter / total_pred.clamp_min(1e-7)).cpu().tolist()
+        class_recall = (total_inter / total_gt.clamp_min(1e-7)).cpu().tolist()
+        class_biou = (total_b_inter / total_b_union.clamp_min(1e-7)).cpu().tolist()
 
         t_prec = (total_skel_prec_inter + 1e-7) / (total_skel_prec_total + 1e-7)
         t_sens = (total_skel_sens_inter + 1e-7) / (total_skel_sens_total + 1e-7)
-        cldice = (
-            1.0
-            if (total_skel_prec_total == 0 and total_skel_sens_total == 0)
-            else (2.0 * t_prec * t_sens) / (t_prec + t_sens + 1e-7)
-        )
+        class_cldice = ((2.0 * t_prec * t_sens) / (t_prec + t_sens + 1e-7)).cpu().tolist()
+
         avg_loss = total_loss / max(n_batches, 1)
+
+        iou = float(np.mean(class_ious))
+        dice = float(np.mean(class_dices))
+        prec = float(np.mean(class_prec))
+        recall = float(np.mean(class_recall))
+        boundary_iou = float(np.mean(class_biou))
+        cldice = float(np.mean(class_cldice))
 
         self.metrics = {
             "loss": float(avg_loss),
@@ -206,15 +219,18 @@ class BaseValidator:
             "recall": float(recall),
             "boundary_iou": float(boundary_iou),
             "cldice": float(cldice),
+            "class_ious": class_ious,
+            "class_dices": class_dices,
         }
         return self.metrics
 
     def print_results(self, epoch: Optional[int] = None):
-        """Print validation metrics summary in clean tabular format."""
+        """Print validation metrics summary in clean tabular format with per-class breakdown."""
         ep_str = f"Epoch {epoch}" if epoch is not None else "Summary"
+        metric_label = "mIoU" if len(self.metrics.get("class_ious", [])) > 1 else "IoU"
         print(f"\n{'-'*95}")
         print(
-            f"{'Stage / Metric':<16} {'Samples':<8} {'Loss':<10} {'IoU':<10} {'Dice':<10} {'Prec':<10} {'Recall':<10} {'bIoU':<10} {'clDice':<10}"
+            f"{'Stage / Metric':<16} {'Samples':<8} {'Loss':<10} {metric_label:<10} {'Dice':<10} {'Prec':<10} {'Recall':<10} {'bIoU':<10} {'clDice':<10}"
         )
         print(f"{'-'*95}")
 
@@ -230,7 +246,16 @@ class BaseValidator:
         print(
             f"{ep_str:<16} {num_images:<8} {loss_val:<10.4f} {iou_val:<10.4f} {dice_val:<10.4f} {prec_val:<10.4f} {recall_val:<10.4f} {biou_val:<10.4f} {cldice_val:<10.4f}"
         )
-        print(f"{'-'*95}\n")
+        print(f"{'-'*95}")
+
+        class_ious = self.metrics.get("class_ious", [])
+        if len(class_ious) > 1:
+            print("Per-class IoU breakdown:")
+            for c_idx, c_iou in enumerate(class_ious):
+                print(f"  Class {c_idx:2d}: {c_iou:.4f}")
+            print(f"{'-'*95}\n")
+        else:
+            print()
 
     def save_visualizations(self, num_samples: int = 4):
         """Save sample validation qualitative comparisons."""

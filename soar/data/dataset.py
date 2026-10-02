@@ -52,6 +52,7 @@ class SegmentationDataset(Dataset):
         auto: bool = False,
         preprocess_config: Optional[PreprocessConfig] = None,
         in_channels: int = 3,
+        num_classes: int = 1,
     ) -> None:
         super().__init__()
         self.data_root = Path(data_root)
@@ -60,6 +61,8 @@ class SegmentationDataset(Dataset):
         self.has_gt = self.split in ('train', 'training', 'val', 'valid', 'validation')
         self.img_size = img_size
         self.in_channels = in_channels
+        self.num_classes = max(1, int(num_classes))
+        self.coco_cat_map: Dict[int, int] = {}
         self.augment = augment and self.is_train
         self.use_cache = use_cache
         self.cache_limit = max(0, cache_limit)
@@ -211,6 +214,12 @@ class SegmentationDataset(Dataset):
         """Parse COCO polygon structure."""
         with open(ann_path, "r", encoding="utf-8") as f:
             coco_payload = json.load(f)
+
+        categories = sorted([cat["id"] for cat in coco_payload.get("categories", []) if "id" in cat])
+        if categories:
+            self.coco_cat_map = {cat_id: idx for idx, cat_id in enumerate(categories)}
+        else:
+            self.coco_cat_map = {}
 
         id_to_filename: Dict[int, str] = {}
         for img_info in coco_payload.get("images", []):
@@ -377,11 +386,26 @@ class SegmentationDataset(Dataset):
                     if mask is None:
                         with Image.open(mask_path) as mask_img:
                             mask = np.array(mask_img.convert('L'), dtype=np.uint8)
-                    # Convert to binary {0.0, 1.0}
-                    if mask.dtype == np.uint8 and mask.max() > 1:
-                        mask = (mask > 127).astype(np.float32)
+                    if self.num_classes == 1:
+                        # Convert to binary {0.0, 1.0}
+                        if mask.dtype == np.uint8 and mask.max() > 1:
+                            mask = (mask > 127).astype(np.float32)
+                        else:
+                            mask = mask.astype(np.float32)
                     else:
-                        mask = mask.astype(np.float32)
+                        mask_u8 = mask.astype(np.int64)
+                        max_label = int(mask_u8.max())
+                        one_hot = np.zeros((mask.shape[0], mask.shape[1], self.num_classes), dtype=np.float32)
+                        if max_label >= self.num_classes:
+                            # 1-indexed (0 background, 1..num_classes foreground)
+                            for c in range(self.num_classes):
+                                one_hot[..., c] = (mask_u8 == (c + 1)).astype(np.float32)
+                        else:
+                            # 0-indexed
+                            for c in range(self.num_classes):
+                                one_hot[..., c] = (mask_u8 == c).astype(np.float32)
+                        mask = one_hot
+
                     if not mask.flags['C_CONTIGUOUS'] or not mask.flags['F_CONTIGUOUS']:
                         mask = np.ascontiguousarray(mask)
                     return mask
@@ -389,7 +413,7 @@ class SegmentationDataset(Dataset):
         return None
 
     def _generate_coco_mask(self, img_name: str, raw_shape: Optional[Tuple[int, int]] = None) -> Optional[np.ndarray]:
-        """Rasterize COCO polygon coordinates into a binary mask."""
+        """Rasterize COCO polygon coordinates into a binary or multi-class mask."""
         polys = self.annotations.get(img_name)
         if polys is None:
             polys = self.annotations.get(Path(img_name).stem)
@@ -406,19 +430,33 @@ class SegmentationDataset(Dataset):
             img = self._read_image(img_path)
             h, w = img.shape[:2]
 
-        mask = np.zeros((h, w), dtype=np.float32)
-        for ann in polys:
-            segmentation = ann.get("segmentation", [])
-            if isinstance(segmentation, list):
-                for poly in segmentation:
-                    pts = np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
-                    cv2.fillPoly(mask, [pts], color=1)
+        if self.num_classes == 1:
+            mask = np.zeros((h, w), dtype=np.float32)
+            for ann in polys:
+                segmentation = ann.get("segmentation", [])
+                if isinstance(segmentation, list):
+                    for poly in segmentation:
+                        pts = np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
+                        cv2.fillPoly(mask, [pts], color=1.0)
+        else:
+            mask = np.zeros((self.num_classes, h, w), dtype=np.float32)
+            for ann in polys:
+                cat_id = ann.get("category_id", 0)
+                cid = self.coco_cat_map.get(cat_id, cat_id if cat_id < self.num_classes else 0)
+                if 0 <= cid < self.num_classes:
+                    segmentation = ann.get("segmentation", [])
+                    if isinstance(segmentation, list):
+                        for poly in segmentation:
+                            pts = np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
+                            cv2.fillPoly(mask[cid], [pts], color=1.0)
+            mask = np.transpose(mask, (1, 2, 0))
 
         return np.ascontiguousarray(mask)
 
     def _generate_yolo_mask(self, img_name: str, raw_shape: Optional[Tuple[int, int]] = None) -> Optional[np.ndarray]:
-        """Rasterize YOLO annotations into a binary mask."""
-        if img_name not in self.annotations:
+        """Rasterize YOLO annotations into a binary or multi-class mask."""
+        label_file_path = self.annotations.get(img_name) or self.annotations.get(Path(img_name).stem)
+        if not label_file_path:
             return None
 
         if raw_shape is not None:
@@ -430,16 +468,28 @@ class SegmentationDataset(Dataset):
             img = self._read_image(img_path)
             h, w = img.shape[:2]
 
-        label_file = Path(self.annotations[img_name])
+        label_file = Path(label_file_path)
         annotations = self._parse_yolo_annotation(label_file, w, h)
 
-        mask = np.zeros((h, w), dtype=np.float32)
-        for ann in annotations:
-            segmentation = ann.get("segmentation", [])
-            if isinstance(segmentation, list):
-                for poly in segmentation:
-                    pts = np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
-                    cv2.fillPoly(mask, [pts], color=1)
+        if self.num_classes == 1:
+            mask = np.zeros((h, w), dtype=np.float32)
+            for ann in annotations:
+                segmentation = ann.get("segmentation", [])
+                if isinstance(segmentation, list):
+                    for poly in segmentation:
+                        pts = np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
+                        cv2.fillPoly(mask, [pts], color=1.0)
+        else:
+            mask = np.zeros((self.num_classes, h, w), dtype=np.float32)
+            for ann in annotations:
+                cid = ann.get("class_id", 0)
+                if 0 <= cid < self.num_classes:
+                    segmentation = ann.get("segmentation", [])
+                    if isinstance(segmentation, list):
+                        for poly in segmentation:
+                            pts = np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
+                            cv2.fillPoly(mask[cid], [pts], color=1.0)
+            mask = np.transpose(mask, (1, 2, 0))
 
         return np.ascontiguousarray(mask)
 
@@ -494,7 +544,10 @@ class SegmentationDataset(Dataset):
             mask = self._read_mask(img_path, raw_shape=meta.get('raw_shape') if meta else None)
             target_h, target_w = (img.shape[0], img.shape[1]) if (img.ndim == 3 and img.shape[-1] in (1, 3, 4)) else img.shape[-2:]
             if mask is None:
-                mask = np.zeros((target_h, target_w), dtype=np.float32)
+                if self.num_classes == 1:
+                    mask = np.zeros((target_h, target_w), dtype=np.float32)
+                else:
+                    mask = np.zeros((target_h, target_w, self.num_classes), dtype=np.float32)
 
             if valid_mask is None:
                 valid_mask = np.ones((target_h, target_w), dtype=np.float32)
@@ -502,18 +555,23 @@ class SegmentationDataset(Dataset):
             # Mask preprocessing via nearest neighbor interpolation
             if self.mask_preprocessor is not None:
                 mask_processed, _, mask_meta = self.mask_preprocessor(mask)
-                mask = mask_processed.squeeze()
+                mask = mask_processed
 
-                if mask.ndim != 2:
-                    if mask.ndim == 1 and mask.shape[0] == target_h * target_w:
-                        mask = mask.reshape(target_h, target_w)
-                    else:
-                        raise ValueError(
-                            f"Cannot reshape mask to 2D. Target: {target_h}x{target_w}, shape: {mask.shape}"
-                        )
-
-                if mask.shape != (target_h, target_w):
-                    mask = cv2.resize(mask, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
+                if self.num_classes == 1:
+                    mask = mask.squeeze()
+                    if mask.ndim != 2:
+                        if mask.ndim == 1 and mask.shape[0] == target_h * target_w:
+                            mask = mask.reshape(target_h, target_w)
+                        else:
+                            raise ValueError(
+                                f"Cannot reshape mask to 2D. Target: {target_h}x{target_w}, shape: {mask.shape}"
+                            )
+                    if mask.shape != (target_h, target_w):
+                        mask = cv2.resize(mask, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
+                else:
+                    if mask.shape[:2] != (target_h, target_w):
+                        resized = [cv2.resize(mask[..., c], (target_w, target_h), interpolation=cv2.INTER_NEAREST) for c in range(self.num_classes)]
+                        mask = np.stack(resized, axis=-1)
 
             # Synchronized data augmentations across image, mask, and valid_mask
             if self.augment:
@@ -523,14 +581,19 @@ class SegmentationDataset(Dataset):
                 else:
                     img_np = img
 
-                m_2d = mask.squeeze()
+                m_hwc = mask if mask.ndim == 3 else mask[..., None]
                 vm_2d = valid_mask.squeeze()
-                stacked_masks = np.stack([m_2d, vm_2d], axis=-1)
+                vm_hwc = vm_2d[..., None]
+                stacked_masks = np.concatenate([m_hwc, vm_hwc], axis=-1)
 
                 img_np, stacked_masks = self.augmentation(img_np, stacked_masks)
                 img = img_np
-                mask = stacked_masks[..., 0]
-                valid_mask = stacked_masks[..., 1]
+                mask = stacked_masks[..., :self.num_classes]
+                valid_mask = stacked_masks[..., self.num_classes:]
+
+                if self.num_classes == 1:
+                    mask = mask.squeeze(-1)
+                valid_mask = valid_mask.squeeze(-1)
 
             img = np.ascontiguousarray(img)
             mask = np.ascontiguousarray(mask)
@@ -538,8 +601,13 @@ class SegmentationDataset(Dataset):
 
             if mask.ndim == 2:
                 mask = mask[np.newaxis, ...]
+            elif mask.ndim == 3 and mask.shape[-1] == self.num_classes:
+                mask = np.transpose(mask, (2, 0, 1))
+
             if valid_mask.ndim == 2:
                 valid_mask = valid_mask[np.newaxis, ...]
+            elif valid_mask.ndim == 3 and valid_mask.shape[-1] == 1:
+                valid_mask = np.transpose(valid_mask, (2, 0, 1))
 
             sample = {
                 'image': torch.from_numpy(img).float(),

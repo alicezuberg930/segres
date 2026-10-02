@@ -184,6 +184,7 @@ def validate(args):
         device=args.device,
         num_workers=args.workers,
         save_dir=args.save_dir,
+        num_classes=args.num_classes,
     )
     
     # Setup data and validate

@@ -49,11 +49,11 @@ class DiceLoss(BaseLoss):
         target = target.float()
 
         if valid_mask is not None:
-            vmask = valid_mask.float()
+            vmask = valid_mask.float().expand_as(prob) if valid_mask.shape != prob.shape else valid_mask.float()
             prob = prob * vmask
             target = target * vmask
 
-        dims = tuple(range(1, prob.ndim))
+        dims = (-2, -1)
         intersection = torch.sum(prob * target, dim=dims)
         cardinality = torch.sum(prob, dim=dims) + torch.sum(target, dim=dims)
 
@@ -108,11 +108,11 @@ class TverskyLoss(BaseLoss):
         target = target.float()
 
         if valid_mask is not None:
-            vmask = valid_mask.float()
+            vmask = valid_mask.float().expand_as(prob) if valid_mask.shape != prob.shape else valid_mask.float()
             prob = prob * vmask
             target = target * vmask
 
-        dims = tuple(range(1, prob.ndim))
+        dims = (-2, -1)
         tp = torch.sum(prob * target, dim=dims)
         fp = torch.sum(prob * (1.0 - target), dim=dims)
         fn = torch.sum((1.0 - prob) * target, dim=dims)
@@ -150,11 +150,11 @@ class FocalTverskyLoss(BaseLoss):
         target = target.float()
 
         if valid_mask is not None:
-            vmask = valid_mask.float()
+            vmask = valid_mask.float().expand_as(prob) if valid_mask.shape != prob.shape else valid_mask.float()
             prob = prob * vmask
             target = target * vmask
 
-        dims = tuple(range(1, prob.ndim))
+        dims = (-2, -1)
         tp = torch.sum(prob * target, dim=dims)
         fp = torch.sum(prob * (1.0 - target), dim=dims)
         fn = torch.sum((1.0 - prob) * target, dim=dims)

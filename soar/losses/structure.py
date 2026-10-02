@@ -56,7 +56,7 @@ class CLDiceLoss(BaseLoss):
         target = target.float()
 
         if valid_mask is not None:
-            vmask = valid_mask.float()
+            vmask = valid_mask.float().expand_as(prob) if valid_mask.shape != prob.shape else valid_mask.float()
             prob = prob * vmask
             target = target * vmask
 
@@ -64,7 +64,7 @@ class CLDiceLoss(BaseLoss):
         with torch.no_grad():
             skel_true = soft_skeletonize(target, self.n_iter)
 
-        dims = tuple(range(1, prob.ndim))
+        dims = (-2, -1)
         t_prec = (torch.sum(skel_pred * target, dim=dims) + self.smooth) / (
             torch.sum(skel_pred, dim=dims) + self.smooth
         ).clamp_min(1e-7)
@@ -94,7 +94,7 @@ class SkeletonLoss(BaseLoss):
         target = target.float()
 
         if valid_mask is not None:
-            vmask = valid_mask.float()
+            vmask = valid_mask.float().expand_as(prob) if valid_mask.shape != prob.shape else valid_mask.float()
             prob = prob * vmask
             target = target * vmask
 

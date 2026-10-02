@@ -343,22 +343,38 @@ class LetterBoxMask(BasePreprocessor):
         
         # Resize with INTER_NEAREST (critical for masks)
         if shape[::-1] != new_unpad:
-            mask = cv2.resize(mask, new_unpad, interpolation=cv2.INTER_NEAREST)
-        
+            if mask.ndim == 3 and mask.shape[-1] > 4:
+                resized_channels = [
+                    cv2.resize(mask[..., ch], new_unpad, interpolation=cv2.INTER_NEAREST)
+                    for ch in range(mask.shape[-1])
+                ]
+                mask = np.stack(resized_channels, axis=-1)
+            else:
+                mask = cv2.resize(mask, new_unpad, interpolation=cv2.INTER_NEAREST)
+
         # Pad
         if mask.ndim == 2:
             mask = mask[..., None]
-        
+
         h, w, c = mask.shape
         if top == 0 and bottom == 0 and left == 0 and right == 0:
             padded = mask
             valid_mask = np.ones((padded.shape[0], padded.shape[1]), dtype=np.float32)
         else:
-            padded = cv2.copyMakeBorder(
-                mask, top, bottom, left, right,
-                cv2.BORDER_CONSTANT,
-                value=(self.padding_value,) * c if c > 1 else self.padding_value
-            )
+            if c > 4:
+                padded = np.pad(
+                    mask,
+                    ((top, bottom), (left, right), (0, 0)),
+                    mode="constant",
+                    constant_values=self.padding_value,
+                )
+            else:
+                padded = cv2.copyMakeBorder(
+                    mask, top, bottom, left, right,
+                    cv2.BORDER_CONSTANT,
+                    value=(self.padding_value,) * c if c > 1 else self.padding_value
+                )
+
             # Create valid mask
             valid_mask = np.ones((padded.shape[0], padded.shape[1]), dtype=np.float32)
             if top > 0:

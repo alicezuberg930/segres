@@ -58,7 +58,7 @@ class RandomRotate(BaseAugmentation):
         mask_out = None
         if mask is not None:
             # Handle multi-channel masks (e.g. (H, W, 2) stacked mask + valid_mask)
-            if mask.ndim == 3 and mask.shape[-1] not in (1, 3, 4):
+            if mask.ndim == 3:
                 warped_channels = [
                     cv2.warpAffine(mask[..., c], rot_mat, (w, h), flags=cv2.INTER_NEAREST)
                     for c in range(mask.shape[-1])

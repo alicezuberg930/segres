@@ -173,6 +173,7 @@ class BaseTrainer:
             split="train",
             img_size=self.img_size,
             in_channels=self.in_channels,
+            num_classes=self.num_classes,
             augment=True,
             use_cache=True,
             auto=False,
@@ -185,6 +186,7 @@ class BaseTrainer:
             split="val",
             img_size=self.img_size,
             in_channels=self.in_channels,
+            num_classes=self.num_classes,
             augment=False,
             use_cache=True,
             auto=False,
@@ -272,6 +274,7 @@ class BaseTrainer:
                 num_workers=self.num_workers,
                 save_dir=str(self.checkpoint_dir / "val_visualizations") if self.rank == 0 else None,
                 dataloader=self.val_loader,
+                num_classes=self.num_classes,
             )
             self.validator.dataloader = self.val_loader
             self.validator.val_loader = self.val_loader
