@@ -517,13 +517,18 @@ class SegmentationDataset(Dataset):
 
             # Synchronized data augmentations across image, mask, and valid_mask
             if self.augment:
-                img_np = np.transpose(img, (1, 2, 0)) if img.ndim == 3 else img
+                # Ensure img_np is HWC (H, W, C) or HW (H, W) for OpenCV augmentations
+                if img.ndim == 3 and img.shape[0] in (1, 3, 4) and img.shape[-1] not in (1, 3, 4):
+                    img_np = np.transpose(img, (1, 2, 0))
+                else:
+                    img_np = img
+
                 m_2d = mask.squeeze()
                 vm_2d = valid_mask.squeeze()
                 stacked_masks = np.stack([m_2d, vm_2d], axis=-1)
 
                 img_np, stacked_masks = self.augmentation(img_np, stacked_masks)
-                img = np.transpose(img_np, (2, 0, 1)) if img_np.ndim == 3 else img_np
+                img = img_np
                 mask = stacked_masks[..., 0]
                 valid_mask = stacked_masks[..., 1]
 

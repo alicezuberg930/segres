@@ -103,6 +103,36 @@ def test_normalize01_uint8_fastpath():
     assert float(res.max()) <= 1.0
 
 
+def test_dataset_with_augmentations():
+    """Verify SegmentationDataset handles augment=True properly without OpenCV shape errors."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        train_dir = tmp_path / "train" / "train_images"
+        train_dir.mkdir(parents=True, exist_ok=True)
+        masks_dir = tmp_path / "masks"
+        masks_dir.mkdir(parents=True, exist_ok=True)
+
+        img = np.random.randint(0, 256, (640, 480, 3), dtype=np.uint8)
+        mask = np.random.randint(0, 2, (640, 480), dtype=np.uint8) * 255
+        cv2.imwrite(str(train_dir / "img1.png"), img)
+        cv2.imwrite(str(masks_dir / "img1.png"), mask)
+
+        ds = SegmentationDataset(
+            data_root=tmp_path,
+            split="train",
+            img_size=(1024, 1024),
+            in_channels=3,
+            mask_dir=str(masks_dir),
+            augment=True,
+        )
+
+        for _ in range(5):
+            sample = ds[0]
+            assert sample["image"].shape == (3, 1024, 1024), f"Bad image shape: {sample['image'].shape}"
+            assert sample["mask"].shape == (1, 1024, 1024), f"Bad mask shape: {sample['mask'].shape}"
+            assert sample["valid_mask"].shape == (1, 1024, 1024), f"Bad valid_mask shape: {sample['valid_mask'].shape}"
+
+
 if __name__ == "__main__":
     print("Running test_offline_rasterization_and_dataset_loading...")
     test_offline_rasterization_and_dataset_loading()
@@ -110,4 +140,7 @@ if __name__ == "__main__":
     test_letterbox_bypass()
     print("Running test_normalize01_uint8_fastpath...")
     test_normalize01_uint8_fastpath()
+    print("Running test_dataset_with_augmentations...")
+    test_dataset_with_augmentations()
     print("All Phase 1 optimization unit tests passed successfully!")
+
