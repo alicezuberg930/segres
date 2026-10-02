@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from ..models.few_shot import FewShotSOAR
 from ..data.dataset import SegmentationDataset
+from ..data.dataset_config import DatasetConfig
 from ..data.few_shot import FewShotEpisodeDataset, few_shot_collate_fn
 from ..losses import SegmentationLoss
 from ..losses.structure import soft_skeletonize
@@ -67,7 +68,6 @@ class FewShotTrainer:
         self.val_episodes = val_episodes
         self.img_size = tuple(img_size)
         self.in_channels = in_channels
-        self.num_classes = num_classes
         self.epochs = epochs
         self.lr = lr
         self.weight_decay = weight_decay
@@ -76,6 +76,15 @@ class FewShotTrainer:
         self.workers = workers
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+        # Resolve dataset configuration
+        self.dataset_cfg = DatasetConfig.resolve(data_root)
+        self.data_root = self.dataset_cfg.root_path
+        if (self.dataset_cfg.nc > 1 or len(self.dataset_cfg.names) > 1) and num_classes == 1:
+            self.num_classes = self.dataset_cfg.nc
+        else:
+            self.num_classes = num_classes
+        self.class_names = self.dataset_cfg.names
 
         # 1. Initialize Few-Shot Model
         print(f"\n[Few-Shot SOAR] Initializing {shots}-Shot Segmentation Framework (Fold {fold}/{total_folds})...")
@@ -96,31 +105,71 @@ class FewShotTrainer:
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
 
         # 4. Setup Data
-        self._setup_datasets(data_root, annotation_file)
+        self._setup_datasets(self.data_root, annotation_file)
 
         self.best_miou = 0.0
 
-    def _setup_datasets(self, data_root: str, annotation_file: Optional[str]):
+    def _setup_datasets(self, data_root: Path, annotation_file: Optional[str]):
         """Construct base datasets and wrap them into Episodic Few-Shot Loaders."""
+        train_image_dir = self.dataset_cfg.train_images
+        val_image_dir = self.dataset_cfg.val_images
+        train_image_files = self.dataset_cfg.train_image_list
+        val_image_files = self.dataset_cfg.val_image_list
+
+        train_ann = (
+            str(self.dataset_cfg.annotation_files["train"])
+            if "train" in self.dataset_cfg.annotation_files
+            else annotation_file
+        )
+        val_ann = (
+            str(self.dataset_cfg.annotation_files["val"])
+            if "val" in self.dataset_cfg.annotation_files
+            else annotation_file
+        )
+
+        train_mask_dir = (
+            str(self.dataset_cfg.mask_dirs["train"])
+            if "train" in self.dataset_cfg.mask_dirs
+            else None
+        )
+        val_mask_dir = (
+            str(self.dataset_cfg.mask_dirs["val"])
+            if "val" in self.dataset_cfg.mask_dirs
+            else None
+        )
+
         base_train_ds = SegmentationDataset(
             data_root=data_root,
             split="train",
             img_size=self.img_size,
             in_channels=self.in_channels,
             num_classes=self.num_classes,
+            names=self.class_names,
             augment=True,
-            annotation_file=annotation_file,
+            annotation_file=train_ann,
+            mask_dir=train_mask_dir,
+            image_dir=train_image_dir,
+            image_files=train_image_files,
         )
 
-        base_val_ds = SegmentationDataset(
-            data_root=data_root,
-            split="val",
-            img_size=self.img_size,
-            in_channels=self.in_channels,
-            num_classes=self.num_classes,
-            augment=False,
-            annotation_file=annotation_file,
-        )
+        try:
+            base_val_ds = SegmentationDataset(
+                data_root=data_root,
+                split="val",
+                img_size=self.img_size,
+                in_channels=self.in_channels,
+                num_classes=self.num_classes,
+                names=self.class_names,
+                augment=False,
+                annotation_file=val_ann,
+                mask_dir=val_mask_dir,
+                image_dir=val_image_dir,
+                image_files=val_image_files,
+            )
+            if len(base_val_ds) == 0:
+                base_val_ds = base_train_ds
+        except Exception:
+            base_val_ds = base_train_ds
 
         # Create episodic samplers
         self.train_episode_ds = FewShotEpisodeDataset(

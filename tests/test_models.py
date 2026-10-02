@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import torch
 from soar import SegmentationModel
 
@@ -17,3 +21,11 @@ def test_model_initialization():
         x = torch.randn(1, 3, 256, 256)
         out = model(x)
         assert out.shape == (1, 1, 256, 256), f"{cfg} output shape mismatch: {out.shape}"
+
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    test_model_initialization()
+    print("test_models passed successfully!")

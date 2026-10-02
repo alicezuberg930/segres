@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import torch
 from soar.losses import SegmentationLoss, DiceBCELoss, CLDiceLoss, BoundaryDistLoss
 
@@ -15,3 +19,11 @@ def test_loss_backward():
     total_loss.backward()
     assert pred.grad is not None
     assert not torch.isnan(pred.grad).any(), "Gradient contains NaN"
+
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    test_loss_backward()
+    print("test_losses passed successfully!")

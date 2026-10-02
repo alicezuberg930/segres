@@ -48,6 +48,10 @@ class SegmentationDataset(Dataset):
         cache_limit: int = 8,
         annotation_file: Optional[str] = None,
         mask_dir: Optional[str] = None,
+        image_dir: Optional[str | Path] = None,
+        labels_dir: Optional[str | Path] = None,
+        image_files: Optional[List[Path]] = None,
+        names: Optional[Dict[int, str]] = None,
         transform: Optional[Callable] = None,
         auto: bool = False,
         preprocess_config: Optional[PreprocessConfig] = None,
@@ -62,6 +66,10 @@ class SegmentationDataset(Dataset):
         self.img_size = img_size
         self.in_channels = in_channels
         self.num_classes = max(1, int(num_classes))
+        self.class_names = names or {i: f"class_{i}" for i in range(self.num_classes)}
+        self._explicit_image_dir = Path(image_dir) if image_dir else None
+        self._explicit_labels_dir = Path(labels_dir) if labels_dir else None
+        self._explicit_image_files = image_files
         self.coco_cat_map: Dict[int, int] = {}
         self.augment = augment and self.is_train
         self.use_cache = use_cache
@@ -113,31 +121,52 @@ class SegmentationDataset(Dataset):
         self._load_annotations(annotation_file, mask_dir)
 
         # In-memory processing cache
-        self._cache_store: Dict[str, Tuple[np.ndarray, Optional[np.ndarray], Optional[Dict]]] = {}
+        self._cache_store: Dict[str, Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], Optional[Dict]]] = {}
 
     def _resolve_image_dir(self) -> Path:
         """Locate root directory containing image targets."""
-        sub = "train" if self.has_gt else "test"
-        candidate_paths = [
-            self.data_root / sub / f"{sub}_images",
-            self.data_root / f"{sub}_images",
-            self.data_root / sub,
-            self.data_root / "images" / "val2017",
-            self.data_root / "images" / "train2017",
-            self.data_root / "val2017",
-            self.data_root / "train2017",
+        if self._explicit_image_dir and self._explicit_image_dir.is_dir():
+            return self._explicit_image_dir
+
+        sub = self.split
+        sub_aliases = [sub]
+        if sub in ("val", "valid", "validation"):
+            sub_aliases = ["val", "valid", "validation", "val2017"]
+        elif sub in ("train", "training"):
+            sub_aliases = ["train", "training", "train2017"]
+        elif sub in ("test", "testing"):
+            sub_aliases = ["test", "testing", "test2017"]
+
+        candidate_paths = []
+        for s in sub_aliases:
+            candidate_paths.extend([
+                self.data_root / "images" / s,
+                self.data_root / s / "images",
+                self.data_root / s / f"{s}_images",
+                self.data_root / f"{s}_images",
+                self.data_root / s,
+            ])
+        candidate_paths.extend([
             self.data_root / "images",
             self.data_root,
-        ]
+        ])
+
+        for path in candidate_paths:
+            if path.is_dir() and any(path.iterdir()):
+                return path
         for path in candidate_paths:
             if path.is_dir():
                 return path
+
         raise FileNotFoundError(
             f"Could not locate image directory for split '{self.split}'. Checked: {candidate_paths}"
         )
 
     def _collect_image_files(self) -> List[Path]:
         """Index all matching image files across supported extensions without duplicates."""
+        if self._explicit_image_files is not None:
+            return sorted([p for p in self._explicit_image_files if p.exists()])
+
         files: set[Path] = set()
         for ext in self.SUPPORTED_EXTENSIONS:
             files.update(self.image_dir.glob(f"*{ext}"))
@@ -172,6 +201,8 @@ class SegmentationDataset(Dataset):
 
         # 2. Check candidate pre-rasterized mask directories
         candidate_dirs = [
+            self.data_root / "masks" / self.split,
+            self.data_root / self.split / "masks",
             self.data_root / "masks",
             self.data_root / f"{self.split}_masks",
             self.data_root / "train_masks",
@@ -204,18 +235,27 @@ class SegmentationDataset(Dataset):
             self._load_yolo_annotations(yolo_labels_dir)
             return
 
-        # 5. Fall back to default candidate COCO JSON files
-        candidate_files = [
-            self.data_root / "annotations" / "instances_val2017.json",
-            self.data_root / "annotations" / "instances_train2017.json",
-            self.data_root / "instances_val2017.json",
-            self.data_root / "instances_train2017.json",
-            self.data_root / "train" / "MAGFiLO_1.0_Annotations_kaggle2026_train.json",
-            self.data_root / "MAGFiLO_1.0_Annotations_kaggle2026_train.json",
-            self.data_root / "train" / "annotations.json",
+        # 5. Fall back to standard candidate COCO JSON files
+        sub = self.split
+        sub_aliases = [sub]
+        if sub in ("val", "valid", "validation"):
+            sub_aliases = ["val2017", "val", "valid", "validation"]
+        elif sub in ("train", "training"):
+            sub_aliases = ["train2017", "train", "training"]
+
+        candidate_files = []
+        for s in sub_aliases:
+            candidate_files.extend([
+                self.data_root / "annotations" / f"instances_{s}.json",
+                self.data_root / f"instances_{s}.json",
+                self.data_root / "annotations" / f"{s}.json",
+                self.data_root / f"{s}.json",
+                self.data_root / s / "annotations.json",
+            ])
+        candidate_files.extend([
             self.data_root / "annotations.json",
             self.data_root / "train.json",
-        ]
+        ])
         for candidate in candidate_files:
             if candidate.exists():
                 self._load_coco_annotations(candidate)
@@ -250,13 +290,37 @@ class SegmentationDataset(Dataset):
 
     def _resolve_yolo_labels_dir(self) -> Optional[Path]:
         """Locate YOLO label directory."""
-        sub = "train" if self.has_gt else "test"
-        candidate_paths = [
-            self.data_root / sub / "labels",
-            self.data_root / "labels",
-            self.data_root / f"{sub}_labels",
-            self.data_root / sub / f"{sub}_labels",
-        ]
+        if self._explicit_labels_dir and self._explicit_labels_dir.is_dir():
+            return self._explicit_labels_dir
+
+        # Try mapping image_dir replacing 'images' with 'labels'
+        img_dir_str = str(self.image_dir)
+        if "images" in img_dir_str:
+            labels_candidate = Path(img_dir_str.replace("images", "labels"))
+            if labels_candidate.is_dir():
+                return labels_candidate
+
+        sub = self.split
+        sub_aliases = [sub]
+        if sub in ("val", "valid", "validation"):
+            sub_aliases = ["val", "valid", "validation", "val2017"]
+        elif sub in ("train", "training"):
+            sub_aliases = ["train", "training", "train2017"]
+        elif sub in ("test", "testing"):
+            sub_aliases = ["test", "testing", "test2017"]
+
+        candidate_paths = []
+        for s in sub_aliases:
+            candidate_paths.extend([
+                self.data_root / "labels" / s,
+                self.data_root / s / "labels",
+                self.data_root / f"{s}_labels",
+                self.data_root / s / f"{s}_labels",
+            ])
+        candidate_paths.append(self.data_root / "labels")
+        for path in candidate_paths:
+            if path.is_dir() and any(path.glob("*.txt")):
+                return path
         for path in candidate_paths:
             if path.is_dir():
                 return path
@@ -400,6 +464,15 @@ class SegmentationDataset(Dataset):
             or self.img_to_masks.get(stem.replace('_img', '_mask'))
             or self.img_to_masks.get(f"{stem}_mask")
         )
+        if not mask_info:
+            # Check Ultralytics standard label path convention: /images/ -> /labels/, suffix -> .txt
+            p_posix = img_path.as_posix()
+            if "/images/" in p_posix:
+                cand_label = Path(p_posix.replace("/images/", "/labels/")).with_suffix(".txt")
+                if cand_label.is_file():
+                    self.img_to_masks[stem] = "yolo"
+                    self.annotations[stem] = str(cand_label)
+                    mask_info = "yolo"
         if mask_info:
             if mask_info == "coco":
                 return self._generate_coco_mask(img_name, raw_shape)

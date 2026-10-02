@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, Subset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
-from ..data import SegmentationDataset, collate_fn
+from ..data import SegmentationDataset, collate_fn, DatasetConfig
 from ..data.config import PreprocessConfig
 from .validator import BaseValidator
 from ..losses import SegmentationLoss as CompositeSegmentationLoss
@@ -62,7 +62,8 @@ class BaseTrainer:
         sampler_mode: str = "hybrid",
     ):
         self.model_cfg = model_cfg
-        self.data_root = Path(data_root)
+        self.dataset_cfg = DatasetConfig.resolve(data_root)
+        self.data_root = self.dataset_cfg.root_path
         self.img_size = img_size
         if batch_size != 1:
             warnings.warn(
@@ -88,7 +89,14 @@ class BaseTrainer:
         self.save_interval = save_interval
         self.resume = resume
         self.in_channels = in_channels
-        self.num_classes = num_classes
+
+        # Automatically resolve num_classes and class_names from DatasetConfig if applicable
+        if (self.dataset_cfg.nc > 1 or len(self.dataset_cfg.names) > 1) and num_classes == 1:
+            self.num_classes = self.dataset_cfg.nc
+        else:
+            self.num_classes = num_classes
+        self.class_names = self.dataset_cfg.names
+
         self.preprocess_config = preprocess_config
         self.annotation_file = annotation_file
         self.balance_sampler = balance_sampler
@@ -168,43 +176,90 @@ class BaseTrainer:
         self.criterion = CompositeSegmentationLoss()
 
     def _setup_data(self):
+        train_image_dir = self.dataset_cfg.train_images
+        val_image_dir = self.dataset_cfg.val_images
+        train_image_files = self.dataset_cfg.train_image_list
+        val_image_files = self.dataset_cfg.val_image_list
+
+        train_ann = (
+            str(self.dataset_cfg.annotation_files["train"])
+            if "train" in self.dataset_cfg.annotation_files
+            else self.annotation_file
+        )
+        val_ann = (
+            str(self.dataset_cfg.annotation_files["val"])
+            if "val" in self.dataset_cfg.annotation_files
+            else self.annotation_file
+        )
+
+        train_mask_dir = (
+            str(self.dataset_cfg.mask_dirs["train"])
+            if "train" in self.dataset_cfg.mask_dirs
+            else None
+        )
+        val_mask_dir = (
+            str(self.dataset_cfg.mask_dirs["val"])
+            if "val" in self.dataset_cfg.mask_dirs
+            else None
+        )
+
         train_dataset = SegmentationDataset(
             data_root=self.data_root,
             split="train",
             img_size=self.img_size,
             in_channels=self.in_channels,
             num_classes=self.num_classes,
+            names=self.class_names,
             augment=True,
             use_cache=True,
             auto=False,
             preprocess_config=self.preprocess_config,
-            annotation_file=self.annotation_file,
+            annotation_file=train_ann,
+            mask_dir=train_mask_dir,
+            image_dir=train_image_dir,
+            image_files=train_image_files,
         )
 
-        val_dataset = SegmentationDataset(
-            data_root=self.data_root,
-            split="val",
-            img_size=self.img_size,
-            in_channels=self.in_channels,
-            num_classes=self.num_classes,
-            augment=False,
-            use_cache=True,
-            auto=False,
-            preprocess_config=self.preprocess_config,
-            annotation_file=self.annotation_file,
-        )
+        val_dataset = None
+        has_val = False
+        try:
+            val_dataset = SegmentationDataset(
+                data_root=self.data_root,
+                split="val",
+                img_size=self.img_size,
+                in_channels=self.in_channels,
+                num_classes=self.num_classes,
+                names=self.class_names,
+                augment=False,
+                use_cache=True,
+                auto=False,
+                preprocess_config=self.preprocess_config,
+                annotation_file=val_ann,
+                mask_dir=val_mask_dir,
+                image_dir=val_image_dir,
+                image_files=val_image_files,
+            )
+            if len(val_dataset) > 0 and set(val_dataset.image_files) != set(train_dataset.image_files):
+                has_val = True
+        except Exception:
+            has_val = False
 
-        total_len = len(train_dataset)
-        val_len = int(total_len * self.val_split)
-        train_len = total_len - val_len
+        if has_val and val_dataset is not None:
+            train_ds = train_dataset
+            val_ds = val_dataset
+            val_len = len(val_ds)
+        else:
+            total_len = len(train_dataset)
+            val_len = int(total_len * self.val_split)
+            train_len = total_len - val_len
 
-        generator = torch.Generator().manual_seed(42)
-        shuffled_indices = torch.randperm(total_len, generator=generator).tolist()
-        train_indices = shuffled_indices[:train_len]
-        val_indices = shuffled_indices[train_len:]
+            generator = torch.Generator().manual_seed(42)
+            shuffled_indices = torch.randperm(total_len, generator=generator).tolist()
+            train_indices = shuffled_indices[:train_len]
+            val_indices = shuffled_indices[train_len:]
 
-        train_ds = Subset(train_dataset, train_indices)
-        val_ds = Subset(val_dataset, val_indices)
+            train_ds = Subset(train_dataset, train_indices)
+            val_ds = Subset(train_dataset, val_indices) if val_len > 0 else None
 
         if self.use_ddp:
             train_sampler = DistributedSampler(train_ds, num_replicas=self.world_size, rank=self.rank, shuffle=True)
@@ -219,7 +274,7 @@ class BaseTrainer:
             train_sampler = None
         val_sampler = (
             DistributedSampler(val_ds, num_replicas=self.world_size, rank=self.rank, shuffle=False)
-            if (self.use_ddp and val_len > 0)
+            if (self.use_ddp and val_len > 0 and val_ds is not None)
             else None
         )
 
@@ -247,7 +302,7 @@ class BaseTrainer:
                 drop_last=False,
                 persistent_workers=(self.num_workers > 0),
             )
-            if val_len > 0
+            if (val_len > 0 and val_ds is not None)
             else None
         )
 
