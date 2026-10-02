@@ -149,6 +149,11 @@ class SegmentationDataset(Dataset):
                 files.update(self.image_dir.glob(f"*/*{ext}"))
                 files.update(self.image_dir.glob(f"*/*{ext.upper()}"))
 
+        # Filter out mask files if primary/satellite image files are present in the same directory (e.g. DeepGlobe)
+        primary_files = [f for f in files if not f.stem.endswith('_mask')]
+        if primary_files:
+            files = set(primary_files)
+
         return sorted(files)
 
     def _load_annotations(self, annotation_file: Optional[str], mask_dir: Optional[str]) -> None:
@@ -177,6 +182,12 @@ class SegmentationDataset(Dataset):
                 self._load_mask_directory(candidate)
                 if self.img_to_masks:
                     return
+
+        # Check if co-located mask files (e.g. *_mask.png) exist in image_dir
+        if self.image_dir.is_dir() and any(f.stem.endswith('_mask') for f in self.image_dir.glob('*')):
+            self._load_mask_directory(self.image_dir, only_mask_suffix=True)
+            if self.img_to_masks:
+                return
 
         # 3. Fall back to COCO JSON annotations if provided
         if annotation_file:
@@ -304,12 +315,21 @@ class SegmentationDataset(Dataset):
 
         return annotations
 
-    def _load_mask_directory(self, mask_path: Path) -> None:
+    def _load_mask_directory(self, mask_path: Path, only_mask_suffix: bool = False) -> None:
         """Index mask bitmaps stored directly in directories."""
         for mask_file in mask_path.glob("*"):
             if mask_file.suffix.lower() in ('.png', '.jpg', '.jpeg', '.bmp', '.tiff'):
-                img_name = mask_file.stem
-                self.img_to_masks[img_name] = str(mask_file)
+                stem = mask_file.stem
+                if only_mask_suffix and not stem.endswith('_mask'):
+                    continue
+                file_str = str(mask_file)
+                self.img_to_masks[stem] = file_str
+                self.img_to_masks[mask_file.name] = file_str
+                if stem.endswith('_mask'):
+                    prefix = stem[:-5]
+                    self.img_to_masks[prefix] = file_str
+                    self.img_to_masks[f"{prefix}_sat"] = file_str
+                    self.img_to_masks[f"{prefix}_image"] = file_str
 
     def _read_image(self, path: Path) -> np.ndarray:
         """Load image arrays from disk across formats."""
@@ -372,7 +392,14 @@ class SegmentationDataset(Dataset):
         img_name = img_path.name
         stem = img_path.stem
 
-        mask_info = self.img_to_masks.get(img_name) or self.img_to_masks.get(stem)
+        mask_info = (
+            self.img_to_masks.get(img_name)
+            or self.img_to_masks.get(stem)
+            or self.img_to_masks.get(stem.replace('_sat', '_mask'))
+            or self.img_to_masks.get(stem.replace('_image', '_mask'))
+            or self.img_to_masks.get(stem.replace('_img', '_mask'))
+            or self.img_to_masks.get(f"{stem}_mask")
+        )
         if mask_info:
             if mask_info == "coco":
                 return self._generate_coco_mask(img_name, raw_shape)
