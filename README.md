@@ -111,8 +111,8 @@ SOAR1 scales its capacity through **Resolution-Aware Compound Scaling**, allocat
 
 | Variant | Config File | Scale ID | Backbone Channels (P2 / P3 / P4 / P5) | Parameters |
 | :--- | :--- | :---: | :---: | :---: |
-| **SOAR1-Nano** | [`soar_nano1.yaml`](file:///e:/GithubProjects/OPT-HQ-Net/cfg/models/soar_nano1.yaml) | `n` | 32 / 64 / 128 / 256 | 0.94M |
-| **SOAR1-Small** | [`soar_small1.yaml`](file:///e:/GithubProjects/OPT-HQ-Net/cfg/models/soar_small1.yaml) | `s` | 48 / 96 / 192 / 384 | 2.89M |
-| **SOAR1-Medium** | [`soar_medium1.yaml`](file:///e:/GithubProjects/OPT-HQ-Net/cfg/models/soar_medium1.yaml) | `m` | 64 / 128 / 256 / 512 | 6.80M |
-| **SOAR1-Large** | [`soar_large1.yaml`](file:///e:/GithubProjects/OPT-HQ-Net/cfg/models/soar_large1.yaml) | `l` | 64 / 160 / 320 / 640 | 13.47M |
-| **SOAR1-XLarge** | [`soar_xlarge1.yaml`](file:///e:/GithubProjects/OPT-HQ-Net/cfg/models/soar_xlarge1.yaml) | `x` | 80 / 192 / 384 / 768 | 22.64M |
+| **SOAR1-Nano** | [`soar_nano1.yaml`](file:///e:/GithubProjects/segres/configs/models/soar_nano1.yaml) | `n` | 32 / 64 / 128 / 256 | 0.94M |
+| **SOAR1-Small** | [`soar_small1.yaml`](file:///e:/GithubProjects/segres/configs/models/soar_small1.yaml) | `s` | 48 / 96 / 192 / 384 | 2.89M |
+| **SOAR1-Medium** | [`soar_medium1.yaml`](file:///e:/GithubProjects/segres/configs/models/soar_medium1.yaml) | `m` | 64 / 128 / 256 / 512 | 6.80M |
+| **SOAR1-Large** | [`soar_large1.yaml`](file:///e:/GithubProjects/segres/configs/models/soar_large1.yaml) | `l` | 64 / 160 / 320 / 640 | 13.47M |
+| **SOAR1-XLarge** | [`soar_xlarge1.yaml`](file:///e:/GithubProjects/segres/configs/models/soar_xlarge1.yaml) | `x` | 80 / 192 / 384 / 768 | 22.64M |

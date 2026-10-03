@@ -19,10 +19,10 @@ class ConvBNReLU(nn.Module):
 class DetailBranch(nn.Module):
     """Detail Branch preserves high-resolution low-level spatial details."""
 
-    def __init__(self):
+    def __init__(self, in_channels: int = 3):
         super().__init__()
         self.S1 = nn.Sequential(
-            ConvBNReLU(3, 64, 3, stride=2),
+            ConvBNReLU(in_channels, 64, 3, stride=2),
             ConvBNReLU(64, 64, 3, stride=1),
         )
         self.S2 = nn.Sequential(
@@ -44,9 +44,9 @@ class DetailBranch(nn.Module):
 
 
 class StemBlock(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channels: int = 3):
         super().__init__()
-        self.conv_in = ConvBNReLU(3, 16, 3, stride=2)
+        self.conv_in = ConvBNReLU(in_channels, 16, 3, stride=2)
         self.left = nn.Sequential(
             ConvBNReLU(16, 8, 1, stride=1, padding=0),
             ConvBNReLU(8, 16, 3, stride=2),
@@ -137,9 +137,9 @@ class CEBlock(nn.Module):
 class SemanticBranch(nn.Module):
     """Semantic Branch rapidly captures expansive receptive field."""
 
-    def __init__(self):
+    def __init__(self, in_channels: int = 3):
         super().__init__()
-        self.stem = StemBlock()
+        self.stem = StemBlock(in_channels=in_channels)
         self.stage3 = nn.Sequential(
             GELayer(16, 32, exp_ratio=6, stride=2),
             GELayer(32, 32, exp_ratio=6, stride=1),
@@ -209,8 +209,8 @@ class BiSeNetV2(nn.Module):
 
     def __init__(self, in_channels: int = 3, num_classes: int = 1):
         super().__init__()
-        self.detail = DetailBranch()
-        self.semantic = SemanticBranch()
+        self.detail = DetailBranch(in_channels=in_channels)
+        self.semantic = SemanticBranch(in_channels=in_channels)
         self.bga = BGANeck()
         self.head = nn.Sequential(
             ConvBNReLU(128, 256, 3, padding=1),

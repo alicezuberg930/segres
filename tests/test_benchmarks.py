@@ -12,13 +12,15 @@ import numpy as np
 import torch
 import yaml
 
-from benchmarks.unet.model import UNet
-from benchmarks.dlinknet.model import DLinkNet
-from benchmarks.csnet.model import CSNet
-from benchmarks.bisenetv2.model import BiSeNetV2
-from benchmarks.ddrnet.model import DDRNet
-from benchmarks.pidnet.model import PIDNet
-from benchmarks.segformer.model import SegFormer
+from benchmarks import (
+    UNet,
+    DLinkNet,
+    CSNet,
+    BiSeNetV2,
+    DDRNet,
+    PIDNet,
+    SegFormer,
+)
 
 from benchmarks.common.metrics import BenchmarkMetricAccumulator
 from benchmarks.common.engine import BenchmarkTrainer

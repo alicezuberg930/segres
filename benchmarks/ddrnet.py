@@ -205,3 +205,7 @@ class DDRNet(nn.Module):
         logits = self.head(fused)
 
         return F.interpolate(logits, size=orig_size, mode="bilinear", align_corners=False)
+
+
+# Backward-compatible alias
+DDRNet23 = DDRNet

@@ -21,7 +21,7 @@ from ..data import SegmentationDataset, collate_fn, DatasetConfig
 from ..data.config import PreprocessConfig
 from .validator import BaseValidator
 from ..losses import SegmentationLoss as CompositeSegmentationLoss
-from ..models import SegmentationModel
+from ..models import SegmentationModel, build_model
 from ..utils import ModelEMA, load_checkpoint, save_checkpoint
 
 
@@ -83,7 +83,22 @@ class BaseTrainer:
         self.lr = lr
         self.weight_decay = weight_decay
         self.device = torch.device(device if (device == "cuda" and torch.cuda.is_available()) else "cpu")
-        self.checkpoint_dir = Path(checkpoint_dir)
+
+        # Automatically determine model_name for checkpointing and metrics
+        if isinstance(model_cfg, nn.Module):
+            self.model_name = getattr(model_cfg, "name", model_cfg.__class__.__name__)
+        elif isinstance(model_cfg, str):
+            p = Path(model_cfg)
+            self.model_name = p.stem if p.suffix in (".yaml", ".yml") else model_cfg
+        else:
+            self.model_name = "soar"
+
+        base_ckpt = Path(checkpoint_dir)
+        if base_ckpt.name.lower() != self.model_name.lower():
+            self.checkpoint_dir = base_ckpt / self.model_name
+        else:
+            self.checkpoint_dir = base_ckpt
+
         self.val_split = val_split
         self.num_workers = num_workers
         self.use_amp = use_amp
@@ -151,13 +166,16 @@ class BaseTrainer:
             (self.checkpoint_dir / "val_visualizations").mkdir(parents=True, exist_ok=True)
 
     def _setup_model(self):
-        """Initialize model."""
-        self.model = SegmentationModel(
-            cfg=self.model_cfg,
-            ch=self.in_channels,
-            nc=self.num_classes,
-            verbose=(self.rank == 0),
-        ).to(self.device)
+        """Initialize model using universal model factory."""
+        if isinstance(self.model_cfg, nn.Module):
+            self.model = self.model_cfg.to(self.device)
+        else:
+            self.model = build_model(
+                model=self.model_cfg,
+                in_channels=self.in_channels,
+                num_classes=self.num_classes,
+                verbose=(self.rank == 0),
+            ).to(self.device)
 
         if self.use_ddp:
             self.model = DDP(
@@ -565,6 +583,9 @@ class BaseTrainer:
             ema_model=self.ema,
             scheduler=self.scheduler,
             scaler=self.scaler,
+            model_name=self.model_name,
+            num_classes=self.num_classes,
+            class_names=self.class_names,
         )
 
         if is_best:
@@ -577,6 +598,9 @@ class BaseTrainer:
                 ema_model=self.ema,
                 scheduler=self.scheduler,
                 scaler=self.scaler,
+                model_name=self.model_name,
+                num_classes=self.num_classes,
+                class_names=self.class_names,
             )
 
         if (epoch + 1) % self.save_interval == 0:
@@ -589,6 +613,9 @@ class BaseTrainer:
                 ema_model=self.ema,
                 scheduler=self.scheduler,
                 scaler=self.scaler,
+                model_name=self.model_name,
+                num_classes=self.num_classes,
+                class_names=self.class_names,
             )
 
     def train(self):

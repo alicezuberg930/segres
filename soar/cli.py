@@ -1,19 +1,19 @@
-
 from __future__ import annotations
 
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List, Tuple
 import torch
 import yaml
 
-from .models import SegmentationModel
+from .models import build_model, list_models, SegmentationModel
 from .engine.trainer import BaseTrainer
 from .engine.validator import BaseValidator
 from .engine.predictor import BasePredictor
 from .utils import load_checkpoint
 from .data.config import PreprocessConfig
+from .data import DatasetConfig
 
 
 def resolve_config_path(path_str: Optional[str]) -> Optional[str]:
@@ -34,74 +34,6 @@ def resolve_config_path(path_str: Optional[str]) -> Optional[str]:
     return str(p)
 
 
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="SOAR - Resolution-Preserving Scientific Segmentation")
-    subparsers = parser.add_subparsers(dest="command", required=True, help="Command to execute")
-    
-    # Train command
-    train_parser = subparsers.add_parser("train", help="Train a segmentation model")
-    train_parser.add_argument("--model", type=str, default="configs/models/soar_medium1.yaml", help="Model configuration YAML (nano, small, medium, large, xlarge)")
-    train_parser.add_argument("--data", type=str, required=True, help="Dataset root directory")
-    train_parser.add_argument("--cfg", type=str, default="configs/default.yaml", help="Default configuration YAML")
-    train_parser.add_argument("--img-size", type=int, nargs="+", default=[1024, 1024], help="Image size (height width or single int)")
-    train_parser.add_argument("--accumulate-grad-batches", type=int, default=1, help="Number of steps for gradient accumulation to simulate virtual batch size without VRAM penalty")
-    train_parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
-    train_parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
-    train_parser.add_argument("--weight-decay", type=float, default=1e-5, help="Weight decay")
-    train_parser.add_argument("--device", type=str, default="cuda", help="Device (cuda/cpu)")
-    train_parser.add_argument("--workers", type=int, default=2, help="Number of data loading workers")
-    train_parser.add_argument("--checkpoint-dir", type=str, default="checkpoints", help="Checkpoint directory")
-    train_parser.add_argument("--val-split", type=float, default=0.1, help="Validation split ratio")
-    train_parser.add_argument("--amp", action="store_true", help="Use automatic mixed precision")
-    train_parser.add_argument("--ema", action="store_true", help="Use exponential moving average")
-    train_parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint")
-    train_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
-    train_parser.add_argument("--num-classes", type=int, default=1, help="Number of classes")
-    train_parser.add_argument("--annotation-file", type=str, default=None, help="COCO annotation file path")
-    train_parser.add_argument("--no-augment", action="store_true", help="Disable all data augmentations (flips, rotations, jitter, blur)")
-    train_parser.add_argument("--samples", type=int, default=None, help="Number of images to sample from the dataset for training/overfit")
-    train_parser.add_argument("--preprocess-mode", type=str, default="standard", choices=["minimal", "standard", "native"], help="Preprocessing mode: minimal (no transforms), standard (geometric only), native (keep original resolution)")
-    train_parser.add_argument("--balance-sampler", action="store_true", help="Enable positive:negative tile ratio balancing in DataLoader")
-    train_parser.add_argument("--positive-ratio", type=float, default=0.7, help="Target ratio of positive tiles when balance-sampler is enabled (default: 0.7)")
-    train_parser.add_argument("--sampler-mode", type=str, default="hybrid", choices=["hybrid", "weighted"], help="Balanced sampler mode: hybrid (all positives + subsampled negatives) or weighted (with replacement)")
-    
-    # Validate command
-    val_parser = subparsers.add_parser("val", help="Validate a segmentation model")
-    val_parser.add_argument("--weights", type=str, required=True, help="Path to model weights")
-    val_parser.add_argument("--model", type=str, default="configs/models/soar_medium1.yaml", help="Model configuration YAML (nano, small, medium, large, xlarge)")
-    val_parser.add_argument("--data", type=str, required=True, help="Dataset root directory")
-    val_parser.add_argument("--img-size", type=int, nargs="+", default=[1024, 1024], help="Image size (height width or single int)")
-    val_parser.add_argument("--device", type=str, default="cuda", help="Device (cuda/cpu)")
-    val_parser.add_argument("--workers", type=int, default=2, help="Number of data loading workers")
-    val_parser.add_argument("--save-dir", type=str, default=None, help="Directory to save visualizations")
-    val_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
-    val_parser.add_argument("--num-classes", type=int, default=1, help="Number of classes")
-    
-    # Predict command
-    predict_parser = subparsers.add_parser("predict", help="Run inference on images")
-    predict_parser.add_argument("--weights", type=str, required=True, help="Path to model weights")
-    predict_parser.add_argument("--model", type=str, default="configs/models/soar_nano1.yaml", help="Model configuration YAML (nano, small, medium, large, xlarge)")
-    predict_parser.add_argument("--data", type=str, required=True, help="Dataset root directory")
-    predict_parser.add_argument("--annotation-file", type=str, default=None, help="Optional COCO JSON annotations to evaluate metrics")
-    predict_parser.add_argument("--img-size", type=int, nargs="+", default=[2048, 2048], help="Image size (height width or single int)")
-    predict_parser.add_argument("--split", type=str, default="test", help="Dataset split ('test', 'val', 'train')")
-    predict_parser.add_argument("--samples", type=int, default=None, help="Limit to first N samples for quick benchmarking")
-    predict_parser.add_argument("--device", type=str, default="cuda", help="Device (cuda/cpu)")
-    predict_parser.add_argument("--workers", type=int, default=2, help="Number of data loading workers")
-    predict_parser.add_argument("--threshold", type=float, default=0.5, help="Prediction threshold")
-    predict_parser.add_argument("--min-area", type=int, default=0, help="Minimum component area filter")
-    predict_parser.add_argument("--close-kernel", type=int, default=0, help="Morphological closing kernel size")
-    predict_parser.add_argument("--output-dir", type=str, default="predictions/soar", help="Output directory")
-    predict_parser.add_argument("--output-format", type=str, default="image", choices=["image", "rle"], help="Output format")
-    predict_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
-    predict_parser.add_argument("--num-classes", type=int, default=4, help="Number of classes")
-    predict_parser.add_argument("--num-vis", type=int, default=10, help="Number of visual strips to save")
-    predict_parser.add_argument("--no-vis", action="store_true", help="Disable visual strip generation")
-    
-    return parser.parse_args()
-
-
 def parse_img_size(size_arg) -> tuple[int, int]:
     """Parse image size into (height, width) tuple."""
     if isinstance(size_arg, (list, tuple)):
@@ -109,48 +41,170 @@ def parse_img_size(size_arg) -> tuple[int, int]:
     return (int(size_arg), int(size_arg))
 
 
-def load_config(cfg_path: str) -> dict:
-    """Load configuration from YAML file."""
-    with open(cfg_path, 'r') as f:
-        return yaml.safe_load(f)
+def infer_model_name_and_classes(weights_path: str, model_arg: Optional[str] = None, num_classes_arg: Optional[int] = None) -> tuple[str, int]:
+    """Inspect checkpoint and path to deduce model name and number of classes if not given."""
+    model_name = model_arg
+    num_classes = num_classes_arg
+
+    # Try loading checkpoint header
+    p = Path(weights_path)
+    if p.is_file():
+        try:
+            ckpt = torch.load(weights_path, map_location="cpu")
+            if isinstance(ckpt, dict):
+                if not model_name and "model_name" in ckpt and ckpt["model_name"]:
+                    model_name = ckpt["model_name"]
+                if num_classes is None and "num_classes" in ckpt and ckpt["num_classes"]:
+                    num_classes = int(ckpt["num_classes"])
+        except Exception:
+            pass
+
+    # Infer model name from filepath if still absent
+    if not model_name:
+        for known in list_models():
+            if known.lower().replace("_", "").replace("-", "") in p.as_posix().lower().replace("_", "").replace("-", ""):
+                model_name = known
+                break
+
+    if not model_name:
+        model_name = "soar"
+
+    if num_classes is None:
+        num_classes = 1
+
+    return model_name, num_classes
+
+
+def parse_args(raw_args: Optional[List[str]] = None):
+    """Parse command line arguments supporting both unified and model-first invocation."""
+    if raw_args is None:
+        raw_args = sys.argv[1:]
+
+    # Handle model-first invocation: e.g. "python cli.py unet train --data ..."
+    if len(raw_args) >= 2 and raw_args[0].lower() in [m.lower().replace("_", "").replace("-", "") for m in list_models()]:
+        model_name = raw_args[0]
+        cmd = raw_args[1]
+        remaining = raw_args[2:]
+        raw_args = [cmd, "--model", model_name] + remaining
+
+    parser = argparse.ArgumentParser(description="SOAR & Benchmark Suite - Unified Scientific Segmentation")
+    subparsers = parser.add_subparsers(dest="command", required=True, help="Command to execute")
+
+    # -------------------------------------------------------------
+    # Train command
+    # -------------------------------------------------------------
+    train_parser = subparsers.add_parser("train", help="Train a segmentation model (SOAR or benchmarks)")
+    train_parser.add_argument(
+        "--model",
+        type=str,
+        default="soar",
+        help="Model architecture: 'soar', 'unet', 'dlinknet', 'csnet', 'bisenetv2', 'ddrnet', 'pidnet', 'segformer', or path to YAML config",
+    )
+    train_parser.add_argument("--data", type=str, required=True, help="Dataset root directory or COCO dataset folder")
+    train_parser.add_argument("--cfg", type=str, default="configs/default.yaml", help="Default configuration YAML")
+    train_parser.add_argument("--imgsz", "--img-size", dest="img_size", type=int, nargs="+", default=[1024, 1024], help="Image resolution (e.g. 1024 or 1024 1024)")
+    train_parser.add_argument("--batch", "--batch-size", dest="batch_size", type=int, default=1, help="Physical batch size (default: 1)")
+    train_parser.add_argument("--accum-steps", "--accumulate-grad-batches", dest="accumulate_grad_batches", type=int, default=1, help="Gradient accumulation steps")
+    train_parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
+    train_parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    train_parser.add_argument("--weight-decay", type=float, default=1e-4, help="Weight decay")
+    train_parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device (cuda/cpu)")
+    train_parser.add_argument("--workers", type=int, default=2, help="DataLoader workers")
+    train_parser.add_argument("--checkpoint-dir", type=str, default="checkpoints", help="Base checkpoint directory")
+    train_parser.add_argument("--val-split", type=float, default=0.1, help="Validation split ratio if dataset lacks explicit val set")
+    train_parser.add_argument("--amp", action="store_true", default=True, help="Enable automatic mixed precision")
+    train_parser.add_argument("--no-amp", dest="amp", action="store_false", help="Disable automatic mixed precision")
+    train_parser.add_argument("--ema", action="store_true", help="Use exponential moving average")
+    train_parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume training from")
+    train_parser.add_argument("--in-channels", type=int, default=3, help="Input image channels")
+    train_parser.add_argument("--num-classes", type=int, default=None, help="Number of classes (auto-detected from dataset if omitted)")
+    train_parser.add_argument("--annotation-file", type=str, default=None, help="Optional COCO annotation file path")
+    train_parser.add_argument("--no-augment", action="store_true", help="Disable data augmentations")
+    train_parser.add_argument("--samples", type=int, default=None, help="Subsample dataset to first N samples for quick testing")
+    train_parser.add_argument("--preprocess-mode", type=str, default="standard", choices=["minimal", "standard", "native"], help="Preprocessing mode")
+    train_parser.add_argument("--loss", type=str, default="soar", choices=["soar", "standard"], help="Loss function: 'soar' (composite) or 'standard' (BCE+Dice)")
+
+    # -------------------------------------------------------------
+    # Validate command
+    # -------------------------------------------------------------
+    val_parser = subparsers.add_parser("val", help="Validate a segmentation model")
+    val_parser.add_argument("--weights", type=str, required=True, help="Path to trained checkpoint (.pt)")
+    val_parser.add_argument("--model", type=str, default=None, help="Model architecture (auto-inferred from checkpoint if omitted)")
+    val_parser.add_argument("--data", type=str, required=True, help="Dataset root directory")
+    val_parser.add_argument("--imgsz", "--img-size", dest="img_size", type=int, nargs="+", default=[1024, 1024], help="Image resolution")
+    val_parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device (cuda/cpu)")
+    val_parser.add_argument("--workers", type=int, default=2, help="DataLoader workers")
+    val_parser.add_argument("--save-dir", type=str, default=None, help="Directory to save validation visualizations")
+    val_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
+    val_parser.add_argument("--num-classes", type=int, default=None, help="Number of classes (auto-inferred from checkpoint or dataset)")
+
+    # -------------------------------------------------------------
+    # Predict command
+    # -------------------------------------------------------------
+    predict_parser = subparsers.add_parser("predict", help="Run inference on images")
+    predict_parser.add_argument("--weights", type=str, required=True, help="Path to trained checkpoint (.pt)")
+    predict_parser.add_argument("--model", type=str, default=None, help="Model architecture (auto-inferred from checkpoint if omitted)")
+    predict_parser.add_argument("--data", "--source", dest="data", type=str, required=True, help="Dataset directory or images folder")
+    predict_parser.add_argument("--annotation-file", type=str, default=None, help="Optional COCO JSON annotations to evaluate metrics")
+    predict_parser.add_argument("--imgsz", "--img-size", dest="img_size", type=int, nargs="+", default=[2048, 2048], help="Inference resolution")
+    predict_parser.add_argument("--split", type=str, default="test", help="Dataset split ('test', 'val', 'train')")
+    predict_parser.add_argument("--samples", type=int, default=None, help="Limit to first N samples")
+    predict_parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device (cuda/cpu)")
+    predict_parser.add_argument("--workers", type=int, default=2, help="DataLoader workers")
+    predict_parser.add_argument("--threshold", type=float, default=0.5, help="Prediction threshold")
+    predict_parser.add_argument("--output-dir", type=str, default=None, help="Output directory (default: predictions/<model_name>)")
+    predict_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
+    predict_parser.add_argument("--num-classes", type=int, default=None, help="Number of classes")
+    predict_parser.add_argument("--num-vis", type=int, default=10, help="Number of visual strips to save")
+    predict_parser.add_argument("--no-vis", action="store_true", help="Disable visual strip generation")
+
+    return parser.parse_args(raw_args)
 
 
 def train(args):
-    """Train a segmentation model."""
+    """Execute model training via unified BaseTrainer."""
     img_size = parse_img_size(args.img_size)
-    print(f"Starting training with model: {args.model}")
-    print(f"Dataset: {args.data}")
-    print(f"Image size: {img_size}")
-    print("Physical batch size: 1 (enforced)")
-    print(f"Gradient accumulation batches: {args.accumulate_grad_batches}")
-    print(f"Epochs: {args.epochs}")
-    print(f"Device: {args.device}")
-    print(f"Preprocessing mode: {args.preprocess_mode}")
-    augment = not args.no_augment
-    print(f"Data augmentation: {'Enabled' if augment else 'Disabled (--no-augment)'}")
-    
-    # Build preprocessing config based on mode
+
+    # Resolve dataset to auto-detect number of classes if not given
+    cfg = None
+    try:
+        cfg = DatasetConfig.resolve(args.data)
+    except Exception:
+        pass
+
+    num_classes = args.num_classes
+    if num_classes is None:
+        if cfg and cfg.nc:
+            num_classes = cfg.nc
+        else:
+            num_classes = 1
+
+    print("=" * 70)
+    print(f"Starting Unified Training Run")
+    print(f"  - Model:         {args.model}")
+    print(f"  - Dataset:       {args.data}")
+    print(f"  - Resolution:    {img_size[0]}x{img_size[1]}")
+    print(f"  - Classes:       {num_classes}")
+    print(f"  - Epochs:        {args.epochs}")
+    print(f"  - Batch Size:    1")
+    print(f"  - Device:        {args.device}")
+    print(f"  - Mixed Prec.:   {args.amp}")
+    print(f"  - Loss Type:     {args.loss}")
+    print("=" * 70)
+
+    # Build preprocessing config
     if args.preprocess_mode == "minimal":
         preprocess_config = PreprocessConfig.minimal()
     elif args.preprocess_mode == "native":
         preprocess_config = PreprocessConfig.native_resolution()
-    else:  # standard
+    else:
         preprocess_config = PreprocessConfig.standard_training(img_size=img_size)
 
-    if not augment and preprocess_config is not None:
+    if args.no_augment and preprocess_config is not None:
         preprocess_config.geometric.flip_horizontal = False
         preprocess_config.geometric.flip_vertical = False
         preprocess_config.geometric.rotate = False
 
-    # Parse high-resolution domain loss configuration from cfg YAML
-    loss_cfg = None
-    if getattr(args, "cfg", None):
-        cfg_path = resolve_config_path(args.cfg)
-        if cfg_path and Path(cfg_path).exists():
-            yaml_cfg = load_config(cfg_path)
-            loss_cfg = yaml_cfg.get("loss")
-    
-    # Initialize trainer
     trainer = BaseTrainer(
         model_cfg=args.model,
         data_root=args.data,
@@ -168,42 +222,34 @@ def train(args):
         use_ema=args.ema,
         resume=args.resume,
         in_channels=args.in_channels,
-        num_classes=args.num_classes,
+        num_classes=num_classes,
         preprocess_config=preprocess_config,
         annotation_file=args.annotation_file,
-        balance_sampler=args.balance_sampler,
-        positive_ratio=args.positive_ratio,
-        sampler_mode=args.sampler_mode,
-        loss_cfg=loss_cfg,
-        augment=augment,
+        augment=(not args.no_augment),
         samples=args.samples,
     )
-    
-    # Start training
+
     trainer.train()
-    
-    print("Training completed!")
+    print("[Done] Training completed successfully!")
 
 
 def validate(args):
-    """Validate a segmentation model."""
+    """Execute validation evaluation using BaseValidator."""
     img_size = parse_img_size(args.img_size)
-    print(f"Validating model: {args.weights}")
-    print(f"Dataset: {args.data}")
-    print(f"Device: {args.device}")
-    
-    # Load model
-    model = SegmentationModel(
-        cfg=args.model,
-        ch=args.in_channels,
-        nc=args.num_classes,
-        verbose=True
+    model_name, num_classes = infer_model_name_and_classes(args.weights, args.model, args.num_classes)
+
+    print(f"Validating Model: {model_name} (Classes: {num_classes})")
+    print(f"Weights: {args.weights} | Data: {args.data}")
+
+    model = build_model(
+        model=model_name,
+        in_channels=args.in_channels,
+        num_classes=num_classes,
+        verbose=True,
     )
-    
     device = torch.device(args.device if (args.device == "cuda" and torch.cuda.is_available()) else "cpu")
     load_checkpoint(args.weights, model, device=str(device))
-    
-    # Initialize validator
+
     validator = BaseValidator(
         model=model,
         data_root=args.data,
@@ -211,96 +257,65 @@ def validate(args):
         device=args.device,
         num_workers=args.workers,
         save_dir=args.save_dir,
-        num_classes=args.num_classes,
+        num_classes=num_classes,
     )
-    
-    # Setup data and validate
+
     validator.setup_data(split="val")
-    metrics = validator.validate()
-    
-    # Print results
+    validator.validate()
     validator.print_results()
-    
-    # Save visualizations if requested
+
     if args.save_dir:
         validator.save_visualizations(num_samples=4)
         print(f"Visualizations saved to {args.save_dir}")
 
 
 def predict(args):
-    """Run inference on images."""
+    """Execute prediction pipeline using BasePredictor."""
     img_size = parse_img_size(args.img_size)
-    print(f"\n{'='*70}")
-    print(f"Starting SOAR Inference Pipeline")
-    print(f"  - Weights:       {args.weights}")
-    print(f"  - Config:        {args.model}")
-    print(f"  - Dataset:       {args.data}")
-    print(f"  - Resolution:    {img_size[0]}x{img_size[1]}")
-    print(f"  - Device:        {args.device}")
-    print(f"  - Output Dir:    {args.output_dir}")
-    print(f"{'='*70}\n")
+    model_name, num_classes = infer_model_name_and_classes(args.weights, args.model, args.num_classes)
 
-    # Load model
-    model = SegmentationModel(
-        cfg=args.model,
-        ch=args.in_channels,
-        nc=args.num_classes,
-        verbose=False
+    output_dir = args.output_dir or f"predictions/{model_name}"
+
+    print(f"Running Inference: {model_name} (Classes: {num_classes})")
+    print(f"Weights: {args.weights} -> Output: {output_dir}")
+
+    model = build_model(
+        model=model_name,
+        in_channels=args.in_channels,
+        num_classes=num_classes,
+        verbose=False,
     )
-    
     device = torch.device(args.device if (args.device == "cuda" and torch.cuda.is_available()) else "cpu")
     load_checkpoint(args.weights, model, device=str(device))
-    
-    # Initialize predictor
+
     predictor = BasePredictor(
         model=model,
         data_root=args.data,
-        annotation_file=getattr(args, "annotation_file", None),
+        annotation_file=args.annotation_file,
         img_size=img_size,
-        num_classes=args.num_classes,
+        num_classes=num_classes,
         device=args.device,
         num_workers=args.workers,
         threshold=args.threshold,
-        min_area=args.min_area,
-        close_kernel=args.close_kernel,
-        output_dir=args.output_dir,
+        output_dir=output_dir,
         weights_name=Path(args.weights).stem,
     )
-    
-    # Setup data and execute prediction
-    split = getattr(args, "split", "test")
-    samples = getattr(args, "samples", None)
-    predictor.setup_data(split=split, samples=samples)
 
-    save_vis = not getattr(args, "no_vis", False)
-    num_vis = getattr(args, "num_vis", 10)
-    summary = predictor.predict(save_vis=save_vis, num_vis=num_vis)
-
-    print(f"[Done] Processed {summary['samples_processed']} images in {args.output_dir}")
+    predictor.setup_data(split=args.split, samples=args.samples)
+    save_vis = not args.no_vis
+    summary = predictor.predict(save_vis=save_vis, num_vis=args.num_vis)
+    print(f"[Done] Inference finished: Processed {summary['samples_processed']} images in {output_dir}")
 
 
 def main():
     """Main entry point."""
     args = parse_args()
-    if hasattr(args, "model") and args.model:
-        args.model = resolve_config_path(args.model)
-    if hasattr(args, "cfg") and args.cfg:
-        args.cfg = resolve_config_path(args.cfg)
-    
     if args.command == "train":
         train(args)
     elif args.command == "val":
         validate(args)
     elif args.command == "predict":
         predict(args)
-    elif args.command == "rasterize":
-        from .tools.rasterize import rasterize_coco_dataset
-        rasterize_coco_dataset(
-            annotation_file=args.annotation_file,
-            output_dir=args.output_dir,
-            image_dir=args.image_dir,
-            num_workers=args.workers,
-        )
     else:
         print(f"Unknown command: {args.command}")
         sys.exit(1)

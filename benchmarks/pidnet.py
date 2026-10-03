@@ -131,12 +131,8 @@ class PIDNet(nn.Module):
         self.variant = variant
 
         if variant == "s":
-            m = 2
-            n = 3
             channels = [32, 64, 128, 256]
         else:  # 'm'
-            m = 3
-            n = 4
             channels = [64, 128, 256, 512]
 
         c0, c1, c2, c3 = channels

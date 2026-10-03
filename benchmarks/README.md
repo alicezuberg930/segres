@@ -1,152 +1,93 @@
-# SOAR Benchmarks Suite (Q1 Journal Standard)
+# SOAR Unified Benchmarks Suite (Q1 Journal Standard)
 
-This directory contains standalone, reproducible implementations of all baseline models evaluated in the scientific paper against **SOAR** on high-resolution geometry manifolds ($1024\times 1024$ and $2048\times 2048$).
+This module provides clean, unified implementations of all baseline architectures evaluated in the scientific paper against **SOAR** on high-resolution geometry manifolds ($1024\times 1024$ and $2048\times 2048$).
 
-Each baseline supports:
-1. **Full Training from Scratch (`train.py`)**: Automatic training with AMP mixed-precision, cosine learning rate decay, and micro-batch support ($B=1$).
-2. **Epoch-by-Epoch Validation (`val.py`)**: Validates every epoch and records **mIoU**, **Dice**, Boundary-IoU (**bIoU**), and continuous centerline Dice (**clDice**). Automatically tracks and saves `best.pt` and `last.pt`.
-3. **Symmetrical Inference Pipeline (`predict.py`)**: Generates identical deliverables as SOAR:
-   - Raw multi-class semantic segmentation masks (`masks/*.png`)
-   - Blended color overlays (`overlays/*.png`)
-   - 4-panel visual comparison strips (`visualizations/strip_*.png`: `[Input | Ground Truth | Prediction | Overlay]`)
-   - Structured `benchmark_summary.json` containing latency (ms/frame), real FPS, parameter count (M), and formatted LaTeX table rows.
+All baselines share the **exact same unified training, validation, and prediction pipeline**, guaranteeing 100% scientific fairness and zero supervision or evaluation discrepancies.
 
 ---
 
 ## Supported Baseline Architectures
 
-| Folder | Model | Architectural Paradigm | Variants / Options | Paper Params |
-| :--- | :--- | :--- | :--- | :---: |
-| `unet/` | **U-Net** | Encoder-Decoder Skip Connections | `--base-channels 64` | 17.27 M |
-| `dlinknet/` | **D-LinkNet** | ResNet-34 + Central Dilated Convolutions | ResNet-34 Encoder | 26.24 M |
-| `csnet/` | **CS-Net** | 1D Spatial & Channel Directional Attention | Curvilinear Strips | 15.08 M |
-| `bisenetv2/` | **BiSeNet V2** | Bilateral Spatial & Semantic Streams (BGA) | Detail + Semantic | 3.42 M |
-| `ddrnet/` | **DDRNet** | Deep Dual-Resolution Bilateral with DAPPM | `--variant slim` / `standard` | 5.68M / 20.14M |
-| `pidnet/` | **PIDNet** | Three-Branch PID Controller with Pag & Bag | `--variant s` / `m` | 7.62M / 14.23M |
-| `segformer/` | **SegFormer** | Hierarchical Mix Transformer with All-MLP Decoder | `--variant b0` / `b1` | 3.75M / 13.68M |
+| Model Key | Class | Paradigm | Params |
+| :--- | :--- | :--- | :---: |
+| `unet` | [`UNet`](file:///e:/GithubProjects/segres/benchmarks/unet.py) | Encoder-Decoder Skip Connections (Ronneberger et al., MICCAI 2015) | 17.26 M |
+| `dlinknet` | [`DLinkNet`](file:///e:/GithubProjects/segres/benchmarks/dlinknet.py) | ResNet-34 + Central Dilated Linkage (Zhou et al., CVPR 2018) | 26.24 M |
+| `csnet` | [`CSNet`](file:///e:/GithubProjects/segres/benchmarks/csnet.py) | 1D Spatial & Channel Strip Attention (Mou et al., MICCAI 2019) | 15.08 M |
+| `bisenetv2` | [`BiSeNetV2`](file:///e:/GithubProjects/segres/benchmarks/bisenetv2.py) | Bilateral Spatial & Semantic Streams (Yu et al., IJCV 2021) | 3.42 M |
+| `ddrnet` | [`DDRNet`](file:///e:/GithubProjects/segres/benchmarks/ddrnet.py) | Deep Dual-Resolution Bilateral with DAPPM (Hong et al., 2021) | 5.68M / 20.14M |
+| `pidnet` | [`PIDNet`](file:///e:/GithubProjects/segres/benchmarks/pidnet.py) | Three-Branch PID Controller with Pag & Bag (Xu et al., CVPR 2023) | 7.62M / 14.23M |
+| `segformer` | [`SegFormer`](file:///e:/GithubProjects/segres/benchmarks/segformer.py) | Hierarchical Mix Transformer + All-MLP Decoder (Xie et al., NeurIPS 2021) | 3.75M / 13.68M |
 
 ---
 
-## Quick Start CLI
+## Unified Command-Line Interface (`cli.py`)
 
-Use the master entrypoint `python benchmark_cli.py <model> <train|val|predict>` or run individual model CLIs.
+You can train, validate, or run inference on **any** model (SOAR or peer baselines) using a single command:
 
 ### 1. Training from Scratch
 
 ```bash
-# 1. Train U-Net
-python benchmark_cli.py unet train \
-    --data "path/to/data.yaml" \
-    --imgsz 1024 \
-    --epochs 50 \
-    --batch 1 \
-    --lr 1e-4 \
-    --device cuda \
-    --project "checkpoints/benchmarks"
+# Train U-Net
+python cli.py train --model unet --data "/path/to/dataset" --epochs 50 --imgsz 1024 --device cuda --amp
 
-# 2. Train D-LinkNet
-python benchmark_cli.py dlinknet train \
-    --data "path/to/data.yaml" \
-    --imgsz 1024 \
-    --epochs 50 \
-    --batch 1
+# Train D-LinkNet
+python cli.py train --model dlinknet --data "/path/to/dataset" --epochs 50 --imgsz 1024 --device cuda --amp
 
-# 3. Train CS-Net
-python benchmark_cli.py csnet train \
-    --data "path/to/data.yaml" \
-    --imgsz 1024 \
-    --epochs 50 \
-    --batch 1
+# Train CS-Net
+python cli.py train --model csnet --data "/path/to/dataset" --epochs 50 --imgsz 1024 --device cuda --amp
 
-# 4. Train BiSeNet V2
-python benchmark_cli.py bisenetv2 train \
-    --data "path/to/data.yaml" \
-    --imgsz 1024 \
-    --epochs 50 \
-    --batch 1
+# Train BiSeNet V2
+python cli.py train --model bisenetv2 --data "/path/to/dataset" --epochs 50 --imgsz 1024 --device cuda --amp
 
-# 5. Train DDRNet (DDRNet-23-slim or DDRNet-23)
-python benchmark_cli.py ddrnet train \
-    --data "path/to/data.yaml" \
-    --variant slim \
-    --imgsz 1024 \
-    --epochs 50 \
-    --batch 1
+# Train DDRNet
+python cli.py train --model ddrnet --data "/path/to/dataset" --epochs 50 --imgsz 1024 --device cuda --amp
 
-# 6. Train PIDNet (PIDNet-S or PIDNet-M)
-python benchmark_cli.py pidnet train \
-    --data "path/to/data.yaml" \
-    --variant s \
-    --imgsz 1024 \
-    --epochs 50 \
-    --batch 1
+# Train PIDNet
+python cli.py train --model pidnet --data "/path/to/dataset" --epochs 50 --imgsz 1024 --device cuda --amp
 
-# 7. Train SegFormer (SegFormer-B0 or SegFormer-B1)
-python benchmark_cli.py segformer train \
-    --data "path/to/data.yaml" \
-    --variant b0 \
-    --imgsz 1024 \
-    --epochs 50 \
-    --batch 1
+# Train SegFormer
+python cli.py train --model segformer --data "/path/to/dataset" --epochs 50 --imgsz 1024 --device cuda --amp
+
+# Train SOAR (Default)
+python cli.py train --model soar --data "/path/to/dataset" --epochs 50 --imgsz 1024 --device cuda --amp
 ```
+
+*(Note: Model-first syntax like `python cli.py unet train ...` and `python benchmark_cli.py unet train ...` are also supported for 100% backwards compatibility.)*
 
 ---
 
 ### 2. Validation (`val`)
 
-Evaluate any trained checkpoint on the validation split:
+Evaluate any trained checkpoint:
 
 ```bash
-python benchmark_cli.py ddrnet val \
-    --weights "checkpoints/benchmarks/DDRNet_23_slim/best.pt" \
-    --data "path/to/data.yaml" \
-    --imgsz 1024 \
-    --variant slim
+python cli.py val --weights checkpoints/unet/best.pt --data "/path/to/dataset" --imgsz 1024 --device cuda
 ```
+*(The model architecture and number of classes are automatically detected from the checkpoint.)*
 
 ---
 
-### 3. Symmetrical Inference (`predict`)
+### 3. Inference & Qualitative Output (`predict`)
 
-Run full inference on test/validation sets and generate visual strips, masks, and summary tables:
+Generate multi-class masks and 4-panel visual comparison strips:
 
 ```bash
-python benchmark_cli.py pidnet predict \
-    --weights "checkpoints/benchmarks/PIDNet_S/best.pt" \
-    --data "path/to/data.yaml" \
-    --split val \
-    --imgsz 1024 \
-    --output-dir "predictions/benchmarks" \
-    --save-strips 10 \
-    --variant s
+python cli.py predict --weights checkpoints/unet/best.pt --data "/path/to/dataset" --imgsz 1024 --device cuda
 ```
 
----
-
-## Output Deliverables
-
-Running `predict` creates a unified directory:
+Output directory structure:
 ```
-predictions/benchmarks/<Model_Name>/
-├── masks/                     # Raw PNG multi-class semantic masks
-│   ├── sample_0001.png
-│   └── ...
-├── overlays/                  # Alpha-blended color overlays
-│   ├── sample_0001.png
-│   └── ...
-├── visualizations/            # 4-panel strips [Input | Ground Truth | Prediction | Overlay]
-│   ├── strip_sample_0001.png
-│   └── ...
-└── benchmark_summary.json     # Standardized JSON with latency, FPS, and LaTeX row
+predictions/<model_name>/
+├── masks/             # Multi-class semantic mask PNGs
+├── masks_color/       # Color-coded semantic mask PNGs
+└── visualizations/    # 4-panel strips: [Input | Ground Truth | Prediction | Overlay]
 ```
 
 ---
 
 ## Controlled Supervision Protocol (`--loss {soar,standard}`)
 
-To meet top-tier Q1 journal peer-review standards (e.g., IEEE TPAMI, TIP, CVPR):
 - **`--loss soar` (Default)**: Trains the baseline under SOAR's full composite loss objective:
   $$\mathcal{L}_{total} = \lambda_1 \mathcal{L}_{Focal} + \lambda_2 \mathcal{L}_{Dice} + \lambda_3 \mathcal{L}_{Boundary} + \lambda_4 \mathcal{L}_{clDice}$$
-  This strictly isolates **neural architecture** as the sole independent experimental variable, guaranteeing that performance advantages stem from SOAR's spatial-frequency inductive biases rather than supervision bias.
-- **`--loss standard`**: Trains using vanilla binary cross-entropy + Dice loss ($\mathcal{L}_{BCE} + \mathcal{L}_{Dice}$), used for ablation studies demonstrating how topological supervision affects classical vs. SOAR architectures.
-
+  Guarantees that performance differences stem purely from neural architecture rather than supervision discrepancies.
+- **`--loss standard`**: Trains using vanilla binary cross-entropy + Dice loss ($\mathcal{L}_{BCE} + \mathcal{L}_{Dice}$) for loss ablation experiments.
