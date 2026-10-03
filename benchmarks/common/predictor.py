@@ -103,12 +103,13 @@ class BenchmarkPredictor:
         cfg = None
         try:
             cfg = DatasetConfig.resolve(self.data_root)
-            if not self.num_classes or (self.num_classes == 1 and cfg.nc > 1):
+            if self.num_classes is None and cfg and cfg.nc:
                 self.num_classes = cfg.nc
-            if not self.class_names and cfg.names:
+            if not self.class_names and cfg and cfg.names:
                 self.class_names = cfg.names
         except Exception:
             cfg = None
+
 
 
         ann_path = cfg.annotation_files.get(split) if (cfg and cfg.annotation_files) else str(self.annotation_file) if self.annotation_file else None

@@ -108,11 +108,15 @@ class BenchmarkTrainer:
         except Exception:
             self.cfg = None
 
-        if self.cfg and self.cfg.nc > 1 and (num_classes is None or num_classes == 1):
+        if num_classes is not None:
+            self.num_classes = num_classes
+        elif self.cfg and self.cfg.nc:
             self.num_classes = self.cfg.nc
         else:
-            self.num_classes = num_classes or (self.cfg.nc if self.cfg else 1)
+            self.num_classes = 1
+
         self.class_names = class_names or (self.cfg.names if self.cfg else {})
+
 
 
         # Setup model and optimizers
@@ -124,7 +128,13 @@ class BenchmarkTrainer:
             self.criterion = CombinedSegmentationLoss()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.epochs, eta_min=1e-6)
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.amp)
+        if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+            try:
+                self.scaler = torch.amp.GradScaler("cuda", enabled=self.amp)
+            except Exception:
+                self.scaler = torch.cuda.amp.GradScaler(enabled=self.amp)
+        else:
+            self.scaler = torch.cuda.amp.GradScaler(enabled=self.amp)
 
         self.setup_dataloaders()
         self.history: List[Dict[str, Any]] = []
@@ -190,6 +200,18 @@ class BenchmarkTrainer:
             pin_memory=(self.device.type == "cuda"),
         )
 
+    def _autocast(self):
+        device_type = "cuda" if self.device.type == "cuda" else "cpu"
+        if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+            try:
+                return torch.amp.autocast(device_type, enabled=self.amp)
+            except Exception:
+                pass
+        if device_type == "cuda":
+            return torch.cuda.amp.autocast(enabled=self.amp)
+        from contextlib import nullcontext
+        return nullcontext()
+
     def train_epoch(self, epoch: int) -> float:
         """Run single training epoch."""
         self.model.train()
@@ -204,7 +226,7 @@ class BenchmarkTrainer:
                 valid_masks = valid_masks.to(self.device, non_blocking=True)
 
             self.optimizer.zero_grad()
-            with torch.cuda.amp.autocast(enabled=self.amp):
+            with self._autocast():
                 outputs = self.model(images)
                 if self.loss_type == "soar":
                     loss, _ = self.criterion(outputs, masks, valid_masks, epoch)
@@ -240,7 +262,7 @@ class BenchmarkTrainer:
             if valid_masks is not None:
                 valid_masks = valid_masks.to(self.device, non_blocking=True)
 
-            with torch.cuda.amp.autocast(enabled=self.amp):
+            with self._autocast():
                 logits = self.model(images)
                 probs = torch.sigmoid(logits)
 

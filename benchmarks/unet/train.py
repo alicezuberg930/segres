@@ -15,11 +15,19 @@ def train(
     device: str = "cuda",
     amp: bool = True,
     project: str = "checkpoints/benchmarks",
-    num_classes: int = 1,
+    num_classes: int | None = None,
     num_workers: int = 2,
     base_channels: int = 64,
     loss_type: str = "soar",
 ):
+    if num_classes is None:
+        try:
+            from soar.data.dataset_config import DatasetConfig
+            cfg = DatasetConfig.resolve(data)
+            num_classes = cfg.nc if (cfg and cfg.nc) else 1
+        except Exception:
+            num_classes = 1
+
     model = UNet(in_channels=3, num_classes=num_classes, base_channels=base_channels)
     trainer = BenchmarkTrainer(
         model=model,
@@ -49,10 +57,11 @@ def parse_args():
     parser.add_argument("--device", type=str, default="cuda", help="Execution device (cuda or cpu)")
     parser.add_argument("--amp", action="store_true", default=True, help="Enable AMP mixed precision")
     parser.add_argument("--project", type=str, default="checkpoints/benchmarks", help="Output checkpoint directory")
-    parser.add_argument("--num-classes", type=int, default=1, help="Number of foreground target classes")
+    parser.add_argument("--num-classes", type=int, default=None, help="Number of foreground target classes (auto-detected if omitted)")
     parser.add_argument("--workers", type=int, default=2, help="Number of dataloader worker processes")
     parser.add_argument("--base-channels", type=int, default=64, help="Base channel capacity")
     parser.add_argument("--loss", type=str, default="soar", choices=["soar", "standard"], help="soar (Focal+Dice+Boundary+clDice) or standard (BCE+Dice)")
+
     return parser.parse_args()
 
 
