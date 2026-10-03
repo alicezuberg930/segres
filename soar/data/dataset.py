@@ -795,7 +795,7 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
     if has_mask:
         masks = [ensure_chw(b['mask']) for b in batch]
         res['mask'] = torch.stack(masks, dim=0)
-        res['has_object'] = torch.tensor([b['has_object'] for b in batch], dtype=torch.bool)
+        res['has_object'] = torch.tensor([b.get('has_object', False) for b in batch], dtype=torch.bool)
     else:
         res['mask'] = None
         res['has_object'] = None

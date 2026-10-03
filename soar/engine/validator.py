@@ -222,6 +222,8 @@ class BaseValidator:
         if accum is None:
             return {}
 
+        avg_loss = total_loss / max(n_batches, 1)
+
         total_inter = accum[0]
         total_union = accum[1]
         total_pred = accum[2]
