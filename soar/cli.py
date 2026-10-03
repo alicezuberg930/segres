@@ -44,7 +44,7 @@ def parse_args():
     train_parser.add_argument("--model", type=str, default="configs/models/soar_medium1.yaml", help="Model configuration YAML (nano, small, medium, large, xlarge)")
     train_parser.add_argument("--data", type=str, required=True, help="Dataset root directory")
     train_parser.add_argument("--cfg", type=str, default="configs/default.yaml", help="Default configuration YAML")
-    train_parser.add_argument("--img-size", type=int, nargs=2, default=[1024, 1024], help="Image size (height width)")
+    train_parser.add_argument("--img-size", type=int, nargs="+", default=[1024, 1024], help="Image size (height width or single int)")
     train_parser.add_argument("--accumulate-grad-batches", type=int, default=1, help="Number of steps for gradient accumulation to simulate virtual batch size without VRAM penalty")
     train_parser.add_argument("--epochs", type=int, default=50, help="Number of epochs")
     train_parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
@@ -71,7 +71,7 @@ def parse_args():
     val_parser.add_argument("--weights", type=str, required=True, help="Path to model weights")
     val_parser.add_argument("--model", type=str, default="configs/models/soar_medium1.yaml", help="Model configuration YAML (nano, small, medium, large, xlarge)")
     val_parser.add_argument("--data", type=str, required=True, help="Dataset root directory")
-    val_parser.add_argument("--img-size", type=int, nargs=2, default=[1024, 1024], help="Image size (height width)")
+    val_parser.add_argument("--img-size", type=int, nargs="+", default=[1024, 1024], help="Image size (height width or single int)")
     val_parser.add_argument("--device", type=str, default="cuda", help="Device (cuda/cpu)")
     val_parser.add_argument("--workers", type=int, default=2, help="Number of data loading workers")
     val_parser.add_argument("--save-dir", type=str, default=None, help="Directory to save visualizations")
@@ -81,20 +81,32 @@ def parse_args():
     # Predict command
     predict_parser = subparsers.add_parser("predict", help="Run inference on images")
     predict_parser.add_argument("--weights", type=str, required=True, help="Path to model weights")
-    predict_parser.add_argument("--model", type=str, default="configs/models/soar_medium1.yaml", help="Model configuration YAML (nano, small, medium, large, xlarge)")
+    predict_parser.add_argument("--model", type=str, default="configs/models/soar_nano1.yaml", help="Model configuration YAML (nano, small, medium, large, xlarge)")
     predict_parser.add_argument("--data", type=str, required=True, help="Dataset root directory")
-    predict_parser.add_argument("--img-size", type=int, nargs=2, default=[1024, 1024], help="Image size (height width)")
+    predict_parser.add_argument("--annotation-file", type=str, default=None, help="Optional COCO JSON annotations to evaluate metrics")
+    predict_parser.add_argument("--img-size", type=int, nargs="+", default=[2048, 2048], help="Image size (height width or single int)")
+    predict_parser.add_argument("--split", type=str, default="test", help="Dataset split ('test', 'val', 'train')")
+    predict_parser.add_argument("--samples", type=int, default=None, help="Limit to first N samples for quick benchmarking")
     predict_parser.add_argument("--device", type=str, default="cuda", help="Device (cuda/cpu)")
     predict_parser.add_argument("--workers", type=int, default=2, help="Number of data loading workers")
     predict_parser.add_argument("--threshold", type=float, default=0.5, help="Prediction threshold")
-    predict_parser.add_argument("--min-area", type=int, default=30, help="Minimum component area")
-    predict_parser.add_argument("--close-kernel", type=int, default=3, help="Morphological closing kernel size")
-    predict_parser.add_argument("--output-dir", type=str, default="predictions", help="Output directory")
+    predict_parser.add_argument("--min-area", type=int, default=0, help="Minimum component area filter")
+    predict_parser.add_argument("--close-kernel", type=int, default=0, help="Morphological closing kernel size")
+    predict_parser.add_argument("--output-dir", type=str, default="predictions/soar", help="Output directory")
     predict_parser.add_argument("--output-format", type=str, default="image", choices=["image", "rle"], help="Output format")
     predict_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
-    predict_parser.add_argument("--num-classes", type=int, default=1, help="Number of classes")
+    predict_parser.add_argument("--num-classes", type=int, default=4, help="Number of classes")
+    predict_parser.add_argument("--num-vis", type=int, default=10, help="Number of visual strips to save")
+    predict_parser.add_argument("--no-vis", action="store_true", help="Disable visual strip generation")
     
     return parser.parse_args()
+
+
+def parse_img_size(size_arg) -> tuple[int, int]:
+    """Parse image size into (height, width) tuple."""
+    if isinstance(size_arg, (list, tuple)):
+        return (int(size_arg[0]), int(size_arg[1])) if len(size_arg) >= 2 else (int(size_arg[0]), int(size_arg[0]))
+    return (int(size_arg), int(size_arg))
 
 
 def load_config(cfg_path: str) -> dict:
@@ -105,9 +117,10 @@ def load_config(cfg_path: str) -> dict:
 
 def train(args):
     """Train a segmentation model."""
+    img_size = parse_img_size(args.img_size)
     print(f"Starting training with model: {args.model}")
     print(f"Dataset: {args.data}")
-    print(f"Image size: {args.img_size}")
+    print(f"Image size: {img_size}")
     print("Physical batch size: 1 (enforced)")
     print(f"Gradient accumulation batches: {args.accumulate_grad_batches}")
     print(f"Epochs: {args.epochs}")
@@ -122,7 +135,7 @@ def train(args):
     elif args.preprocess_mode == "native":
         preprocess_config = PreprocessConfig.native_resolution()
     else:  # standard
-        preprocess_config = PreprocessConfig.standard_training(img_size=tuple(args.img_size))
+        preprocess_config = PreprocessConfig.standard_training(img_size=img_size)
 
     if not augment and preprocess_config is not None:
         preprocess_config.geometric.flip_horizontal = False
@@ -141,7 +154,7 @@ def train(args):
     trainer = BaseTrainer(
         model_cfg=args.model,
         data_root=args.data,
-        img_size=tuple(args.img_size),
+        img_size=img_size,
         batch_size=1,
         accumulate_grad_batches=args.accumulate_grad_batches,
         epochs=args.epochs,
@@ -174,6 +187,7 @@ def train(args):
 
 def validate(args):
     """Validate a segmentation model."""
+    img_size = parse_img_size(args.img_size)
     print(f"Validating model: {args.weights}")
     print(f"Dataset: {args.data}")
     print(f"Device: {args.device}")
@@ -193,7 +207,7 @@ def validate(args):
     validator = BaseValidator(
         model=model,
         data_root=args.data,
-        img_size=tuple(args.img_size),
+        img_size=img_size,
         device=args.device,
         num_workers=args.workers,
         save_dir=args.save_dir,
@@ -215,17 +229,23 @@ def validate(args):
 
 def predict(args):
     """Run inference on images."""
-    print(f"Running inference with model: {args.weights}")
-    print(f"Dataset: {args.data}")
-    print(f"Device: {args.device}")
-    print(f"Output format: {args.output_format}")
+    img_size = parse_img_size(args.img_size)
+    print(f"\n{'='*70}")
+    print(f"Starting SOAR Inference Pipeline")
+    print(f"  - Weights:       {args.weights}")
+    print(f"  - Config:        {args.model}")
+    print(f"  - Dataset:       {args.data}")
+    print(f"  - Resolution:    {img_size[0]}x{img_size[1]}")
+    print(f"  - Device:        {args.device}")
+    print(f"  - Output Dir:    {args.output_dir}")
+    print(f"{'='*70}\n")
 
     # Load model
     model = SegmentationModel(
         cfg=args.model,
         ch=args.in_channels,
         nc=args.num_classes,
-        verbose=True
+        verbose=False
     )
     
     device = torch.device(args.device if (args.device == "cuda" and torch.cuda.is_available()) else "cpu")
@@ -235,28 +255,28 @@ def predict(args):
     predictor = BasePredictor(
         model=model,
         data_root=args.data,
-        img_size=tuple(args.img_size),
+        annotation_file=getattr(args, "annotation_file", None),
+        img_size=img_size,
+        num_classes=args.num_classes,
         device=args.device,
         num_workers=args.workers,
         threshold=args.threshold,
         min_area=args.min_area,
         close_kernel=args.close_kernel,
+        output_dir=args.output_dir,
+        weights_name=Path(args.weights).stem,
     )
     
-    # Setup data and predict
-    predictor.setup_data(split="test")
-    predictions = predictor.predict()
-    
-    # Save predictions
-    if args.output_format == "image":
-        predictor.save_predictions(predictions, args.output_dir)
-        print(f"Predictions saved as images to {args.output_dir}")
-    else:
-        output_file = Path(args.output_dir) / "predictions.csv"
-        predictor.save_predictions_rle(predictions, str(output_file))
-        print(f"Predictions saved as RLE to {output_file}")
-    
-    print(f"Processed {len(predictions)} images")
+    # Setup data and execute prediction
+    split = getattr(args, "split", "test")
+    samples = getattr(args, "samples", None)
+    predictor.setup_data(split=split, samples=samples)
+
+    save_vis = not getattr(args, "no_vis", False)
+    num_vis = getattr(args, "num_vis", 10)
+    summary = predictor.predict(save_vis=save_vis, num_vis=num_vis)
+
+    print(f"[Done] Processed {summary['samples_processed']} images in {args.output_dir}")
 
 
 def main():

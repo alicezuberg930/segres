@@ -3,19 +3,17 @@ from __future__ import annotations
 import cv2
 import json
 import time
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Tuple
+
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from typing import Dict, Any, Optional, List, Tuple
-from pathlib import Path
 from tqdm import tqdm
 
-from ..models import SegmentationModel
-from ..data import SegmentationDataset, collate_fn
-from ..losses.structure import soft_skeletonize
-from ..utils import binary_mask_to_rle
+from soar.data import SegmentationDataset, collate_fn
+from soar.losses.structure import soft_skeletonize
 
 
 def _extract_boundary(mask: torch.Tensor, d: int = 2) -> torch.Tensor:
@@ -25,46 +23,50 @@ def _extract_boundary(mask: torch.Tensor, d: int = 2) -> torch.Tensor:
     return F.relu(mask - eroded)
 
 
-class BasePredictor:
+class BaseYOLOPredictor:
     """
-    Dedicated inference pipeline for SOAR models.
-    Executes native-resolution predictions, exports standardized multi-class semantic masks,
-    generates 4-panel visual qualitative strips, and computes peer-reviewed benchmark metrics
-    if ground truth annotations are present.
+    Dedicated inference pipeline for Ultralytics YOLO-seg models.
+    Produces identical outputs, masks, color overlays, visual comparison strips,
+    and semantic benchmark tables as SOAR for direct peer-reviewed comparison.
     """
 
     def __init__(
         self,
-        model: nn.Module,
+        weights: str | Path,
         data_root: str | Path,
         annotation_file: Optional[str | Path] = None,
         img_size: tuple = (2048, 2048),
-        num_classes: int = 1,
+        num_classes: int = 4,
         device: str = "cuda",
         num_workers: int = 2,
-        threshold: float = 0.5,
-        min_area: int = 0,
-        close_kernel: int = 0,
-        output_dir: str | Path = "predictions/soar",
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.5,
+        output_dir: str | Path = "predictions/yolo",
         class_names: Optional[Dict[int, str]] = None,
-        weights_name: str = "soar",
     ):
-        self.model = model
+        self.weights_path = Path(weights).resolve()
         self.data_root = Path(data_root).resolve()
         self.annotation_file = Path(annotation_file).resolve() if annotation_file else None
         self.img_size = img_size
         self.num_classes = num_classes
+        self.device_str = device
         self.device = torch.device(device if (device == "cuda" and torch.cuda.is_available()) else "cpu")
         self.num_workers = num_workers
-        self.threshold = threshold
-        self.min_area = min_area
-        self.close_kernel = close_kernel
+        self.conf_threshold = conf_threshold
+        self.iou_threshold = iou_threshold
         self.output_dir = Path(output_dir).resolve()
         self.class_names = class_names or {}
-        self.weights_name = weights_name
 
-        self.model.to(self.device)
-        self.model.eval()
+        if not self.weights_path.is_file():
+            raise FileNotFoundError(f"Model weights not found at: {self.weights_path}")
+
+        try:
+            from ultralytics import YOLO
+        except ImportError:
+            raise ImportError("ultralytics is required for YOLO inference. Run: pip install ultralytics")
+
+        self.model = YOLO(str(self.weights_path))
+        self.num_params = sum(p.numel() for p in self.model.model.parameters()) / 1e6
 
         self.palette = [
             (0, 0, 255),    # Class 0: Red
@@ -81,7 +83,7 @@ class BasePredictor:
         self.dataloader: Optional[DataLoader] = None
 
     def setup_data(self, split: str = "test", samples: Optional[int] = None) -> None:
-        """Setup inference data loader with optional ground truth annotations."""
+        """Setup inference data loader using SOAR's SegmentationDataset for exact sample alignment."""
         self.dataset = SegmentationDataset(
             data_root=self.data_root,
             annotation_file=str(self.annotation_file) if self.annotation_file else None,
@@ -108,20 +110,18 @@ class BasePredictor:
             drop_last=False,
         )
 
-    @torch.no_grad()
     def predict(self, save_vis: bool = True, num_vis: int = 10) -> Dict[str, Any]:
         """
-        Execute full inference pass across the dataset:
-        1. Measure precise inference latency and FPS.
-        2. Postprocess and export semantic mask PNGs and color overlays.
-        3. If ground truth is present, accumulate and display dense semantic metrics.
+        Execute YOLO inference pass across the test dataset:
+        1. Measure pure inference latency and FPS.
+        2. Rasterize YOLO instance predictions into dense multi-class semantic tensors.
+        3. Save identical deliverables as SOAR (masks/, masks_color/, visualizations/, summary.json).
+        4. If ground truth is present, evaluate identical semantic metrics.
         """
         if self.dataloader is None:
             self.setup_data(split="test")
 
-        self.model.eval()
-
-        # Output subdirectories matching the standard benchmark contract
+        # Output directories
         masks_dir = self.output_dir / "masks"
         color_masks_dir = self.output_dir / "masks_color"
         vis_dir = self.output_dir / "visualizations"
@@ -131,80 +131,112 @@ class BasePredictor:
             vis_dir.mkdir(parents=True, exist_ok=True)
 
         k = self.num_classes
+        h_t, w_t = self.img_size
         has_gt = bool(getattr(self.dataset, "has_gt", False))
         accum = torch.zeros(10, k, dtype=torch.float64, device=self.device) if has_gt else None
 
         latencies_ms: List[float] = []
         vis_count = 0
 
-        # Model parameter count
-        num_params = sum(p.numel() for p in self.model.parameters()) / 1e6
-
-        print(f"\n[SOAR Inference] Executing predictions on {len(self.dataset)} samples...")
-        print(f"  - Model:         {self.weights_name} ({num_params:.2f}M params)")
-        print(f"  - Resolution:    {self.img_size[0]}x{self.img_size[1]}")
+        print(f"\n[YOLO Inference] Executing predictions on {len(self.dataset)} samples...")
+        print(f"  - Model:         {self.weights_path.name} ({self.num_params:.2f}M params)")
+        print(f"  - Resolution:    {h_t}x{w_t}")
         print(f"  - Classes ({k}):   {list(self.class_names.values())}")
         print(f"  - Output Dir:    {self.output_dir}")
         print(f"  - Evaluate GT:   {'Yes' if has_gt else 'No'}")
 
         # Warmup GPU
         if self.device.type == "cuda" and len(self.dataloader) > 0:
-            warmup_img = torch.zeros((1, 3, self.img_size[0], self.img_size[1]), device=self.device)
-            for _ in range(5):
-                _ = self.model(warmup_img)
+            warmup_canvas = np.zeros((h_t, w_t, 3), dtype=np.uint8)
+            with torch.no_grad():
+                for _ in range(5):
+                    _ = self.model.predict(
+                        source=warmup_canvas,
+                        imgsz=h_t,
+                        conf=self.conf_threshold,
+                        iou=self.iou_threshold,
+                        device=self.device_str,
+                        verbose=False,
+                    )
             torch.cuda.synchronize()
 
-        pbar = tqdm(self.dataloader, desc="SOAR Inference", bar_format="{desc}: {percentage:3.0f}%|{bar:20}{r_bar}")
+        pbar = tqdm(self.dataloader, desc="YOLO Inference", bar_format="{desc}: {percentage:3.0f}%|{bar:20}{r_bar}")
 
         for batch in pbar:
-            images = batch["image"].to(self.device, non_blocking=True)
-            valid_masks = batch.get("valid_mask")
-            if valid_masks is not None:
-                valid_masks = valid_masks.to(self.device, non_blocking=True)
+            images = batch["image"]
             image_ids = batch["image_id"]
             gt_masks = batch.get("mask")
-            if gt_masks is not None:
-                gt_masks = gt_masks.to(self.device, non_blocking=True)
 
-            # Precise latency measurement
-            if self.device.type == "cuda":
-                start_evt = torch.cuda.Event(enable_timing=True)
-                end_evt = torch.cuda.Event(enable_timing=True)
-                start_evt.record()
-                preds = self.model(images)
-                end_evt.record()
-                torch.cuda.synchronize()
-                latencies_ms.append(float(start_evt.elapsed_time(end_evt)))
-            else:
-                t0 = time.perf_counter()
-                preds = self.model(images)
-                latencies_ms.append((time.perf_counter() - t0) * 1000.0)
-
-            probs = torch.sigmoid(preds)
-            bin_preds = (probs >= self.threshold).float()
-
-            if valid_masks is not None:
-                vmask = valid_masks.float().expand_as(bin_preds)
-                bin_preds = bin_preds * vmask
-
-            # Postprocessing & Metric Accumulation per sample in batch
             for idx, img_id in enumerate(image_ids):
-                pred_np = bin_preds[idx].cpu().numpy()  # (K, H, W)
-                prob_np = probs[idx].cpu().numpy()      # (K, H, W)
-                img_t = images[idx].cpu()
-                h, w = pred_np.shape[1], pred_np.shape[2]
+                # Convert image tensor to BGR uint8 for YOLO inference
+                img_raw = images[idx].float().numpy()
+                if img_raw.ndim == 2:
+                    img_raw = np.stack([img_raw] * 3, axis=0)
+                elif img_raw.shape[0] == 1:
+                    img_raw = np.repeat(img_raw, 3, axis=0)
+                img_raw = np.transpose(img_raw, (1, 2, 0))
+                if img_raw.max() <= 1.5 and img_raw.min() >= -0.5:
+                    img_raw = np.clip((img_raw - img_raw.min()) / (img_raw.max() - img_raw.min() + 1e-6) * 255.0, 0, 255)
+                img_u8 = img_raw.astype(np.uint8)
+                img_bgr = cv2.cvtColor(img_u8, cv2.COLOR_RGB2BGR)
 
-                # 1. Generate Categorical 2D Mask (0 background, 1..K foreground)
-                cat_mask = np.zeros((h, w), dtype=np.uint8)
-                color_mask = np.zeros((h, w, 3), dtype=np.uint8)
+                # Measure pure model inference latency
+                if self.device.type == "cuda":
+                    start_evt = torch.cuda.Event(enable_timing=True)
+                    end_evt = torch.cuda.Event(enable_timing=True)
+                    start_evt.record()
+                    with torch.no_grad():
+                        results = self.model.predict(
+                            source=img_bgr,
+                            imgsz=h_t,
+                            conf=self.conf_threshold,
+                            iou=self.iou_threshold,
+                            device=self.device_str,
+                            verbose=False,
+                        )[0]
+                    end_evt.record()
+                    torch.cuda.synchronize()
+                    latencies_ms.append(float(start_evt.elapsed_time(end_evt)))
+                else:
+                    t0 = time.perf_counter()
+                    with torch.no_grad():
+                        results = self.model.predict(
+                            source=img_bgr,
+                            imgsz=h_t,
+                            conf=self.conf_threshold,
+                            iou=self.iou_threshold,
+                            device=self.device_str,
+                            verbose=False,
+                        )[0]
+                    latencies_ms.append((time.perf_counter() - t0) * 1000.0)
 
+                # Rasterize YOLO instance predictions into dense multi-class semantic tensor
+                cat_mask = np.zeros((h_t, w_t), dtype=np.uint8)
+                color_mask = np.zeros((h_t, w_t, 3), dtype=np.uint8)
+                pred_np = np.zeros((k, h_t, w_t), dtype=np.float32)
+
+                if results.masks is not None and results.boxes is not None and len(results.boxes) > 0:
+                    classes = results.boxes.cls.cpu().numpy().astype(int)
+                    confidences = results.boxes.conf.cpu().numpy().astype(float)
+                    masks_data = results.masks.data.cpu().numpy()
+
+                    valid_idx = np.where(confidences >= self.conf_threshold)[0]
+                    if len(valid_idx) > 0:
+                        # Ascending sort: higher confidence overwrites lower confidence
+                        sorted_idx = valid_idx[np.argsort(confidences[valid_idx])]
+                        for s_i in sorted_idx:
+                            cid = classes[s_i]
+                            if 0 <= cid < k:
+                                m = masks_data[s_i]
+                                if m.shape[:2] != (h_t, w_t):
+                                    m = cv2.resize(m.astype(np.float32), (w_t, h_t), interpolation=cv2.INTER_LINEAR)
+                                bin_m = m >= 0.5
+                                cat_mask[bin_m] = cid + 1
+                                pred_np[cid] = np.maximum(pred_np[cid], bin_m.astype(np.float32))
+
+                # Color-code semantic predictions
                 for c in range(k):
                     c_mask = pred_np[c] > 0
-                    if self.close_kernel > 0 or self.min_area > 0:
-                        c_mask = self._morph_postprocess(c_mask)
-                        pred_np[c] = c_mask.astype(np.float32)
-
-                    cat_mask[c_mask] = c + 1
                     color = self.palette[c % len(self.palette)]
                     for ch in range(3):
                         color_mask[:, :, ch] = np.maximum(color_mask[:, :, ch], c_mask * color[ch])
@@ -215,14 +247,12 @@ class BasePredictor:
                 # Save color-coded mask PNG
                 cv2.imwrite(str(color_masks_dir / f"{img_id}.png"), color_mask)
 
-                # 2. Accumulate Ground Truth Metrics if available
+                # Accumulate Ground Truth Metrics if available
                 gt_np = None
                 if has_gt and gt_masks is not None:
-                    gt_np = gt_masks[idx].cpu().numpy()  # (K, H, W)
-                    s_pred = bin_preds[idx:idx+1]
-                    s_gt = gt_masks[idx:idx+1].float()
-                    if valid_masks is not None:
-                        s_gt = s_gt * valid_masks[idx:idx+1].float().expand_as(s_gt)
+                    gt_np = gt_masks[idx].numpy()
+                    s_pred = torch.from_numpy(pred_np).unsqueeze(0).to(self.device)
+                    s_gt = torch.from_numpy(gt_np).unsqueeze(0).float().to(self.device)
 
                     inter = (s_pred * s_gt).sum(dim=(0, 2, 3))
                     union = (s_pred + s_gt).clamp_max(1.0).sum(dim=(0, 2, 3))
@@ -248,10 +278,10 @@ class BasePredictor:
                     accum[8] += (skel_true * s_pred).sum(dim=(0, 2, 3))
                     accum[9] += skel_true.sum(dim=(0, 2, 3))
 
-                # 3. Export Qualitative Comparison Strips
+                # Export Qualitative Comparison Strip
                 if save_vis and vis_count < num_vis:
                     self._save_vis_strip(
-                        img_tensor=img_t,
+                        img_bgr=img_bgr,
                         pred_np=pred_np,
                         gt_np=gt_np,
                         color_pred=color_mask,
@@ -260,15 +290,15 @@ class BasePredictor:
                     )
                     vis_count += 1
 
-        # Summary Metrics & Statistics
+        # Summary Metrics
         avg_latency = float(np.mean(latencies_ms)) if latencies_ms else 0.0
         fps = 1000.0 / avg_latency if avg_latency > 0 else 0.0
 
         summary: Dict[str, Any] = {
-            "model_type": "SOAR",
-            "weights_name": self.weights_name,
-            "params_m": round(num_params, 2),
-            "resolution": f"{self.img_size[0]}x{self.img_size[1]}",
+            "model_type": "YOLO-seg",
+            "weights_name": self.weights_path.stem,
+            "params_m": round(self.num_params, 2),
+            "resolution": f"{h_t}x{w_t}",
             "samples_processed": len(self.dataset),
             "latency_ms": round(avg_latency, 2),
             "fps": round(fps, 1),
@@ -334,7 +364,7 @@ class BasePredictor:
         with open(self.output_dir / "summary.json", "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
 
-        print(f"\n[SOAR Inference Complete] Results saved to: {self.output_dir}")
+        print(f"\n[YOLO Inference Complete] Results saved to: {self.output_dir}")
         print(f"  - Semantic Masks:    {masks_dir}")
         print(f"  - Color Overlays:    {color_masks_dir}")
         if save_vis:
@@ -343,22 +373,9 @@ class BasePredictor:
 
         return summary
 
-    def _morph_postprocess(self, bin_mask: np.ndarray) -> np.ndarray:
-        """Morphological closing and small-object filtering."""
-        u8 = bin_mask.astype(np.uint8)
-        if self.close_kernel > 0:
-            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.close_kernel, self.close_kernel))
-            u8 = cv2.morphologyEx(u8, cv2.MORPH_CLOSE, k)
-        if self.min_area > 0:
-            n, labels, stats, _ = cv2.connectedComponentsWithStats(u8, connectivity=8)
-            areas = stats[:, cv2.CC_STAT_AREA]
-            valid = np.where((areas >= self.min_area) & (np.arange(n) > 0))[0]
-            u8 = np.isin(labels, valid).astype(np.uint8)
-        return u8 > 0
-
     def _save_vis_strip(
         self,
-        img_tensor: torch.Tensor,
+        img_bgr: np.ndarray,
         pred_np: np.ndarray,
         gt_np: Optional[np.ndarray],
         color_pred: np.ndarray,
@@ -368,18 +385,6 @@ class BasePredictor:
         """Render standard 4-panel visual strip with semantic legend bar."""
         preview_size = (512, 512)
         k = pred_np.shape[0]
-
-        # Convert input image to BGR uint8
-        img_raw = img_tensor.float().numpy()
-        if img_raw.ndim == 2:
-            img_raw = np.stack([img_raw] * 3, axis=0)
-        elif img_raw.shape[0] == 1:
-            img_raw = np.repeat(img_raw, 3, axis=0)
-        img_raw = np.transpose(img_raw, (1, 2, 0))
-        if img_raw.max() <= 1.5 and img_raw.min() >= -0.5:
-            img_raw = np.clip((img_raw - img_raw.min()) / (img_raw.max() - img_raw.min() + 1e-6) * 255.0, 0, 255)
-        img_u8 = img_raw.astype(np.uint8)
-        img_bgr = cv2.cvtColor(img_u8, cv2.COLOR_RGB2BGR)
 
         img_small = cv2.resize(img_bgr, preview_size, interpolation=cv2.INTER_AREA)
 
@@ -401,7 +406,7 @@ class BasePredictor:
         overlay[p_active] = cv2.addWeighted(img_small, 0.45, pred_small, 0.55, 0)[p_active]
 
         panels = [img_small, gt_small, pred_small, overlay]
-        titles = ["Input Image", "Ground Truth", f"SOAR ({self.weights_name})", "Overlay"]
+        titles = ["Input Image", "Ground Truth", f"YOLO ({self.weights_path.stem})", "Overlay"]
         for p, title in zip(panels, titles):
             cv2.rectangle(p, (0, 0), (p.shape[1], 26), (30, 30, 30), -1)
             cv2.putText(p, title, (10, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 1, cv2.LINE_AA)
@@ -430,7 +435,7 @@ class BasePredictor:
         print(f"\n{'='*105}")
         print(f"{'Model Architecture':<22} {'Samples':<8} {'mIoU (%)':<10} {'Dice (%)':<10} {'clDice (%)':<12} {'bIoU (%)':<10} {'Latency':<10} {'FPS':<8}")
         print(f"{'-'*105}")
-        m_name = f"SOAR ({summary['weights_name']})"
+        m_name = f"YOLO ({summary['weights_name']})"
         print(f"{m_name:<22} {summary['samples_processed']:<8} {summary.get('mIoU', 0.0):<10.2f} {summary.get('Dice', 0.0):<10.2f} {summary.get('clDice', 0.0):<12.2f} {summary.get('Boundary_IoU', 0.0):<10.2f} {summary['latency_ms']:<8.2f}ms {summary['fps']:<8.1f}")
         print(f"{'='*105}")
 
