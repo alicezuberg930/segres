@@ -92,31 +92,6 @@ def parse_args():
     predict_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
     predict_parser.add_argument("--num-classes", type=int, default=1, help="Number of classes")
     
-    # Few-shot train command
-    fs_parser = subparsers.add_parser("few-shot-train", help="Train few-shot / one-shot segmentation model (FS-SOAR)")
-    fs_parser.add_argument("--model", type=str, default="configs/models/soar_nano1.yaml", help="Model configuration YAML")
-    fs_parser.add_argument("--data", type=str, required=True, help="Dataset root directory")
-    fs_parser.add_argument("--shots", type=int, default=1, help="Number of support shots (1 for one-shot, 5 for 5-shot)")
-    fs_parser.add_argument("--fold", type=int, default=0, help="Fold index for cross-validation class split (0 to total-folds-1)")
-    fs_parser.add_argument("--total-folds", type=int, default=4, help="Total number of cross-validation folds")
-    fs_parser.add_argument("--train-episodes", type=int, default=1000, help="Number of training episodes per epoch")
-    fs_parser.add_argument("--val-episodes", type=int, default=200, help="Number of validation episodes")
-    fs_parser.add_argument("--img-size", type=int, nargs=2, default=[1024, 1024], help="Image size (height width)")
-    fs_parser.add_argument("--accumulate-grad-batches", type=int, default=1, help="Gradient accumulation batches")
-    fs_parser.add_argument("--epochs", type=int, default=30, help="Number of epochs")
-    fs_parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
-    fs_parser.add_argument("--weight-decay", type=float, default=1e-5, help="Weight decay")
-    fs_parser.add_argument("--device", type=str, default="cuda", help="Device (cuda/cpu)")
-    fs_parser.add_argument("--workers", type=int, default=2, help="Data loader workers")
-    fs_parser.add_argument("--checkpoint-dir", type=str, default="checkpoints_few_shot", help="Checkpoint directory")
-    fs_parser.add_argument("--amp", action="store_true", help="Use automatic mixed precision")
-    fs_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
-    fs_parser.add_argument("--num-classes", type=int, default=1, help="Number of classes in dataset")
-    fs_parser.add_argument("--annotation-file", type=str, default=None, help="Annotation file path")
-    fs_parser.add_argument("--pretrained-backbone", type=str, default=None, help="Pretrained SOAR backbone checkpoint path")
-    fs_parser.add_argument("--freeze-backbone", action="store_true", help="Freeze backbone weights and train only prototype fusion head")
-    fs_parser.add_argument("--cfg", type=str, default="configs/default.yaml", help="Default configuration YAML with loss settings")
-
     return parser.parse_args()
 
 
@@ -273,44 +248,6 @@ def predict(args):
     print(f"Processed {len(predictions)} images")
 
 
-def few_shot_train(args):
-    """Train a few-shot / one-shot segmentation model (FS-SOAR)."""
-    from .engine.few_shot_trainer import FewShotTrainer
-
-    loss_cfg = None
-    if getattr(args, "cfg", None):
-        cfg_path = resolve_config_path(args.cfg)
-        if cfg_path and Path(cfg_path).exists():
-            yaml_cfg = load_config(cfg_path)
-            loss_cfg = yaml_cfg.get("loss")
-
-    trainer = FewShotTrainer(
-        model_cfg=args.model,
-        data_root=args.data,
-        shots=args.shots,
-        fold=args.fold,
-        total_folds=args.total_folds,
-        train_episodes=args.train_episodes,
-        val_episodes=args.val_episodes,
-        img_size=tuple(args.img_size),
-        in_channels=args.in_channels,
-        num_classes=args.num_classes,
-        epochs=args.epochs,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        accumulate_grad_batches=args.accumulate_grad_batches,
-        amp=args.amp,
-        device=args.device,
-        workers=args.workers,
-        checkpoint_dir=args.checkpoint_dir,
-        annotation_file=args.annotation_file,
-        pretrained_backbone=args.pretrained_backbone,
-        freeze_backbone=args.freeze_backbone,
-        loss_cfg=loss_cfg,
-    )
-    trainer.train()
-
-
 def main():
     """Main entry point."""
     args = parse_args()
@@ -321,8 +258,6 @@ def main():
     
     if args.command == "train":
         train(args)
-    elif args.command == "few-shot-train":
-        few_shot_train(args)
     elif args.command == "val":
         validate(args)
     elif args.command == "predict":
