@@ -59,6 +59,7 @@ def parse_args():
     train_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
     train_parser.add_argument("--num-classes", type=int, default=1, help="Number of classes")
     train_parser.add_argument("--annotation-file", type=str, default=None, help="COCO annotation file path")
+    train_parser.add_argument("--no-augment", action="store_true", help="Disable all data augmentations (flips, rotations, jitter, blur)")
     train_parser.add_argument("--preprocess-mode", type=str, default="standard", choices=["minimal", "standard", "native"], help="Preprocessing mode: minimal (no transforms), standard (geometric only), native (keep original resolution)")
     train_parser.add_argument("--balance-sampler", action="store_true", help="Enable positive:negative tile ratio balancing in DataLoader")
     train_parser.add_argument("--positive-ratio", type=float, default=0.7, help="Target ratio of positive tiles when balance-sampler is enabled (default: 0.7)")
@@ -111,6 +112,8 @@ def train(args):
     print(f"Epochs: {args.epochs}")
     print(f"Device: {args.device}")
     print(f"Preprocessing mode: {args.preprocess_mode}")
+    augment = not args.no_augment
+    print(f"Data augmentation: {'Enabled' if augment else 'Disabled (--no-augment)'}")
     
     # Build preprocessing config based on mode
     if args.preprocess_mode == "minimal":
@@ -119,6 +122,11 @@ def train(args):
         preprocess_config = PreprocessConfig.native_resolution()
     else:  # standard
         preprocess_config = PreprocessConfig.standard_training(img_size=tuple(args.img_size))
+
+    if not augment and preprocess_config is not None:
+        preprocess_config.geometric.flip_horizontal = False
+        preprocess_config.geometric.flip_vertical = False
+        preprocess_config.geometric.rotate = False
 
     # Parse high-resolution domain loss configuration from cfg YAML
     loss_cfg = None
@@ -153,6 +161,7 @@ def train(args):
         positive_ratio=args.positive_ratio,
         sampler_mode=args.sampler_mode,
         loss_cfg=loss_cfg,
+        augment=augment,
     )
     
     # Start training

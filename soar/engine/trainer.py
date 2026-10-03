@@ -61,6 +61,7 @@ class BaseTrainer:
         positive_ratio: float = 0.7,
         sampler_mode: str = "hybrid",
         loss_cfg: Optional[Dict[str, Any]] = None,
+        augment: bool = True,
     ):
         self.model_cfg = model_cfg
         self.loss_cfg = loss_cfg
@@ -104,6 +105,7 @@ class BaseTrainer:
         self.balance_sampler = balance_sampler
         self.positive_ratio = positive_ratio
         self.sampler_mode = sampler_mode
+        self.augment = augment
 
         # Distributed training setup
         self.use_ddp = "RANK" in os.environ and "WORLD_SIZE" in os.environ
@@ -215,7 +217,7 @@ class BaseTrainer:
             in_channels=self.in_channels,
             num_classes=self.num_classes,
             names=self.class_names,
-            augment=True,
+            augment=self.augment,
             use_cache=True,
             auto=False,
             preprocess_config=self.preprocess_config,
