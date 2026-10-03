@@ -103,20 +103,43 @@ def convert_coco_to_yolo_seg(
         val_files = sorted(shuffled[:n_val])
         train_files = sorted(shuffled[n_val:])
 
-    # 7. Create directory structure
+    # 7. Create directory structure with canonical Ultralytics images/ and labels/ subdirectories
+    import os
+    import shutil
+
+    images_dir = output_dir / "images"
     labels_dir = output_dir / "labels"
+    images_train_dir = images_dir / "train"
+    images_val_dir = images_dir / "val"
     labels_train_dir = labels_dir / "train"
     labels_val_dir = labels_dir / "val"
-    labels_train_dir.mkdir(parents=True, exist_ok=True)
-    labels_val_dir.mkdir(parents=True, exist_ok=True)
 
-    def write_yolo_labels(filenames: List[str], target_dir: Path) -> List[str]:
+    def link_or_copy(src: Path, dst: Path) -> None:
+        if dst.exists() or dst.is_symlink():
+            try:
+                dst.unlink()
+            except OSError:
+                pass
+        try:
+            os.symlink(src, dst)
+        except (OSError, NotImplementedError, AttributeError):
+            try:
+                os.link(src, dst)
+            except (OSError, NotImplementedError):
+                shutil.copy2(src, dst)
+
+    def setup_split(filenames: List[str], img_target_dir: Path, label_target_dir: Path) -> List[str]:
+        img_target_dir.mkdir(parents=True, exist_ok=True)
+        label_target_dir.mkdir(parents=True, exist_ok=True)
         image_paths = []
         for fname in filenames:
-            img_path = disk_images[fname]
-            image_paths.append(str(img_path.resolve()))
-            stem = img_path.stem
-            label_file = target_dir / f"{stem}.txt"
+            src_img_path = disk_images[fname]
+            dst_img_path = img_target_dir / fname
+            link_or_copy(src_img_path, dst_img_path)
+            image_paths.append(str(dst_img_path.resolve()))
+
+            stem = src_img_path.stem
+            label_file = label_target_dir / f"{stem}.txt"
 
             info = img_info_map.get(fname, {})
             w = float(info.get("width", 2048))
@@ -145,8 +168,8 @@ def convert_coco_to_yolo_seg(
 
         return image_paths
 
-    train_img_paths = write_yolo_labels(train_files, labels_train_dir)
-    val_img_paths = write_yolo_labels(val_files, labels_val_dir)
+    train_img_paths = setup_split(train_files, images_train_dir, labels_train_dir)
+    val_img_paths = setup_split(val_files, images_val_dir, labels_val_dir)
 
     # 8. Write train.txt and val.txt manifests
     train_manifest = output_dir / "train.txt"
@@ -156,11 +179,11 @@ def convert_coco_to_yolo_seg(
     with open(val_manifest, "w", encoding="utf-8") as f:
         f.write("\n".join(val_img_paths) + "\n")
 
-    # 9. Write dataset.yaml
+    # 9. Write dataset.yaml (pointing to relative images/train and images/val)
     yaml_data = {
         "path": str(output_dir.resolve()),
-        "train": str(train_manifest.resolve()),
-        "val": str(val_manifest.resolve()),
+        "train": "images/train",
+        "val": "images/val",
         "names": {int(k): str(v) for k, v in class_names.items()},
         "nc": len(class_names),
     }

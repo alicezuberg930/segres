@@ -88,7 +88,6 @@ def train_yolo(
             "hsv_s": 0.0,
             "hsv_v": 0.0,
             "erasing": 0.0,
-            "crop_fraction": 1.0,
         })
 
     # Allow custom overrides
