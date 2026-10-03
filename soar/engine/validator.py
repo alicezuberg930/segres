@@ -202,14 +202,23 @@ class BaseValidator:
         t_sens = (total_skel_sens_inter + 1e-7) / (total_skel_sens_total + 1e-7)
         class_cldice = ((2.0 * t_prec * t_sens) / (t_prec + t_sens + 1e-7)).cpu().tolist()
 
-        avg_loss = total_loss / max(n_batches, 1)
+        present_mask = (total_gt > 0).cpu().numpy()
+        c_dim = len(class_ious)
 
-        iou = float(np.mean(class_ious))
-        dice = float(np.mean(class_dices))
-        prec = float(np.mean(class_prec))
-        recall = float(np.mean(class_recall))
-        boundary_iou = float(np.mean(class_biou))
-        cldice = float(np.mean(class_cldice))
+        if present_mask.any():
+            iou = float(np.mean([class_ious[c] for c in range(c_dim) if present_mask[c]]))
+            dice = float(np.mean([class_dices[c] for c in range(c_dim) if present_mask[c]]))
+            prec = float(np.mean([class_prec[c] for c in range(c_dim) if present_mask[c]]))
+            recall = float(np.mean([class_recall[c] for c in range(c_dim) if present_mask[c]]))
+            boundary_iou = float(np.mean([class_biou[c] for c in range(c_dim) if present_mask[c]]))
+            cldice = float(np.mean([class_cldice[c] for c in range(c_dim) if present_mask[c]]))
+        else:
+            iou = float(np.mean(class_ious))
+            dice = float(np.mean(class_dices))
+            prec = float(np.mean(class_prec))
+            recall = float(np.mean(class_recall))
+            boundary_iou = float(np.mean(class_biou))
+            cldice = float(np.mean(class_cldice))
 
         self.metrics = {
             "loss": float(avg_loss),
@@ -221,6 +230,7 @@ class BaseValidator:
             "cldice": float(cldice),
             "class_ious": class_ious,
             "class_dices": class_dices,
+            "class_gt": total_gt.cpu().tolist(),
         }
         return self.metrics
 
@@ -249,10 +259,12 @@ class BaseValidator:
         print(f"{'-'*95}")
 
         class_ious = self.metrics.get("class_ious", [])
+        class_gt = self.metrics.get("class_gt", [])
         if len(class_ious) > 1:
             print("Per-class IoU breakdown:")
             for c_idx, c_iou in enumerate(class_ious):
-                print(f"  Class {c_idx:2d}: {c_iou:.4f}")
+                gt_note = " (no GT in split)" if (c_idx < len(class_gt) and class_gt[c_idx] == 0) else ""
+                print(f"  Class {c_idx:2d}: {c_iou:.4f}{gt_note}")
             print(f"{'-'*95}\n")
         else:
             print()
