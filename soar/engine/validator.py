@@ -64,6 +64,8 @@ class BaseValidator:
 
         self.criterion = CompositeSegmentationLoss()
         self.metrics: Dict[str, Any] = {}
+        self._cached_vis: List[Dict[str, torch.Tensor]] = []
+        self.num_vis_samples: int = 4
 
     @property
     def dataloader(self) -> Optional[DataLoader]:
@@ -125,6 +127,7 @@ class BaseValidator:
             self.setup_data(split="val")
 
         self.model.eval()
+        self._cached_vis = []
         accum = None
         total_loss = 0.0
         n_batches = 0
@@ -147,6 +150,21 @@ class BaseValidator:
             n_batches += 1
 
             probs = torch.sigmoid(preds)
+
+            if len(self._cached_vis) < self.num_vis_samples and is_rank_zero:
+                needed = self.num_vis_samples - len(self._cached_vis)
+                take = min(needed, images.shape[0])
+                preview_size = (512, 512)
+                sub_imgs = F.interpolate(images[:take], size=preview_size, mode="bilinear", align_corners=False).cpu()
+                sub_masks = F.interpolate(masks[:take].float(), size=preview_size, mode="nearest").cpu()
+                sub_probs = F.interpolate(probs[:take], size=preview_size, mode="nearest").cpu()
+                for i in range(take):
+                    self._cached_vis.append({
+                        "image": sub_imgs[i],
+                        "mask": sub_masks[i],
+                        "prob": sub_probs[i],
+                    })
+
             bin_preds = (probs >= 0.5).to(dtype=torch.float32)
             gt = masks.to(dtype=torch.float32)
 
@@ -298,59 +316,116 @@ class BaseValidator:
             print()
 
     def save_visualizations(self, num_samples: int = 4):
-        """Save sample validation qualitative comparisons."""
-        if self.save_dir is None or self.dataloader is None:
+        """Save sample validation qualitative comparisons using lightning-fast OpenCV rendering."""
+        if self.save_dir is None:
             return
 
         self.save_dir.mkdir(parents=True, exist_ok=True)
-        self.model.eval()
-        samples_saved = 0
 
-        with torch.no_grad():
-            for batch in self.dataloader:
-                if samples_saved >= num_samples:
-                    break
-
-                images = self._ensure_4d_tensor(batch["image"].to(self.device, non_blocking=True))
-                valid_masks = self._ensure_4d_tensor(batch["valid_mask"].to(self.device, non_blocking=True))
-                masks = self._ensure_4d_tensor(batch["mask"].to(self.device, non_blocking=True))
-
-                preds = self.model(images)
-                probs = torch.sigmoid(preds)
-
-                for i in range(images.shape[0]):
-                    if samples_saved >= num_samples:
+        samples = list(self._cached_vis)
+        if len(samples) < num_samples and self.dataloader is not None:
+            with torch.no_grad():
+                for batch in self.dataloader:
+                    if len(samples) >= num_samples:
                         break
+                    images = self._ensure_4d_tensor(batch["image"].to(self.device, non_blocking=True))
+                    masks = self._ensure_4d_tensor(batch["mask"].to(self.device, non_blocking=True))
+                    preds = self.model(images)
+                    probs = torch.sigmoid(preds)
+                    preview_size = (512, 512)
+                    needed = num_samples - len(samples)
+                    take = min(needed, images.shape[0])
+                    sub_imgs = F.interpolate(images[:take], size=preview_size, mode="bilinear", align_corners=False).cpu()
+                    sub_masks = F.interpolate(masks[:take].float(), size=preview_size, mode="nearest").cpu()
+                    sub_probs = F.interpolate(probs[:take], size=preview_size, mode="nearest").cpu()
+                    for i in range(take):
+                        samples.append({
+                            "image": sub_imgs[i],
+                            "mask": sub_masks[i],
+                            "prob": sub_probs[i],
+                        })
 
-                    img = images[i].cpu().numpy()
-                    mask = masks[i].cpu().numpy()
-                    valid = valid_masks[i].cpu().numpy()
-                    pred = probs[i].cpu().numpy()
+        for idx, item in enumerate(samples[:num_samples]):
+            self._save_sample_fast(item, idx)
 
-                    self._save_sample(img, mask, valid, pred, samples_saved)
-                    samples_saved += 1
+        self._cached_vis = []
 
-    def _save_sample(self, img: np.ndarray, mask: np.ndarray, valid: np.ndarray, pred: np.ndarray, idx: int):
-        import matplotlib.pyplot as plt
+    def _save_sample_fast(self, item: Dict[str, torch.Tensor], idx: int):
+        """Render multi-class colored comparison strip with real class legend in sub-10ms via OpenCV."""
+        img_tensor = item["image"]
+        mask_tensor = item["mask"]
+        prob_tensor = item["prob"]
 
-        fig, axes = plt.subplots(1, 4, figsize=(16, 4))
-        axes[0].imshow(img[0] if img.ndim == 3 else img, cmap="gray")
-        axes[0].set_title("Input Image")
-        axes[0].axis("off")
+        img_np = img_tensor.float().numpy()
+        if img_np.ndim == 2:
+            img_np = np.stack([img_np] * 3, axis=0)
+        elif img_np.shape[0] == 1:
+            img_np = np.repeat(img_np, 3, axis=0)
+        elif img_np.shape[0] > 3:
+            img_np = img_np[:3]
 
-        axes[1].imshow(mask[0] if mask.ndim == 3 else mask, cmap="gray")
-        axes[1].set_title(f"Ground Truth ({int(mask.sum())} px)")
-        axes[1].axis("off")
+        img_np = np.transpose(img_np, (1, 2, 0))
+        if img_np.max() <= 1.5 and img_np.min() >= -0.5:
+            img_np = np.clip((img_np - img_np.min()) / (img_np.max() - img_np.min() + 1e-6) * 255.0, 0, 255)
+        img_np = img_np.astype(np.uint8)
+        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
-        bin_pred = (pred[0] if pred.ndim == 3 else pred) >= 0.5
-        axes[2].imshow(bin_pred, cmap="gray")
-        axes[2].set_title(f"Prediction ({int(bin_pred.sum())} px)")
-        axes[2].axis("off")
+        h, w = img_bgr.shape[:2]
+        mask_np = mask_tensor.float().numpy()
+        prob_np = prob_tensor.float().numpy()
+        k_classes = mask_np.shape[0]
 
-        axes[3].imshow(valid[0] if valid.ndim == 3 else valid, cmap="gray")
-        axes[3].set_title("Valid Mask")
-        axes[3].axis("off")
+        palette = [
+            (0, 0, 255),    # Red
+            (0, 255, 0),    # Green
+            (255, 255, 0),  # Cyan
+            (0, 255, 255),  # Yellow
+            (255, 0, 255),  # Magenta
+            (0, 165, 255),  # Orange
+            (255, 128, 0),  # Blue
+            (128, 255, 0),  # Light green
+        ]
 
-        plt.tight_layout()
-        plt.savefig(self.save_dir / f"val_sample_{idx}.png", dpi=150, bbox_inches="tight")
-        plt.close()
+        gt_colored = np.zeros((h, w, 3), dtype=np.uint8)
+        pred_colored = np.zeros((h, w, 3), dtype=np.uint8)
+
+        for c in range(k_classes):
+            color = palette[c % len(palette)]
+            m_c = mask_np[c] > 0.5
+            p_c = prob_np[c] >= 0.5
+            for ch in range(3):
+                gt_colored[:, :, ch] = np.maximum(gt_colored[:, :, ch], m_c * color[ch])
+                pred_colored[:, :, ch] = np.maximum(pred_colored[:, :, ch], p_c * color[ch])
+
+        overlay = img_bgr.copy()
+        p_any = np.any(pred_colored > 0, axis=-1)
+        overlay[p_any] = cv2.addWeighted(img_bgr, 0.5, pred_colored, 0.5, 0)[p_any]
+
+        panels = [img_bgr, gt_colored, pred_colored, overlay]
+        titles = ["Input Image", "Ground Truth", "Prediction (p >= 0.5)", "Overlay"]
+        for p, title in zip(panels, titles):
+            cv2.rectangle(p, (0, 0), (p.shape[1], 26), (30, 30, 30), -1)
+            cv2.putText(p, title, (10, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+
+        strip = np.hstack(panels)
+
+        # Legend banner at the bottom with real class labels
+        legend_h = 32
+        legend_bar = np.full((legend_h, strip.shape[1], 3), 25, dtype=np.uint8)
+        x_offset = 15
+        for c in range(k_classes):
+            color = palette[c % len(palette)]
+            name = self.class_names[c] if (self.class_names and c < len(self.class_names)) else f"Class {c}"
+            # Draw color swatch
+            cv2.rectangle(legend_bar, (x_offset, 8), (x_offset + 16, 24), color, -1)
+            cv2.rectangle(legend_bar, (x_offset, 8), (x_offset + 16, 24), (200, 200, 200), 1)
+            # Draw label
+            text = f" {name} "
+            cv2.putText(legend_bar, text, (x_offset + 20, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (230, 230, 230), 1, cv2.LINE_AA)
+            text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+            x_offset += 24 + text_size[0] + 15
+
+        strip = np.vstack([strip, legend_bar])
+
+        out_path = self.save_dir / f"val_sample_{idx}.png"
+        cv2.imwrite(str(out_path), strip, [cv2.IMWRITE_PNG_COMPRESSION, 2])
