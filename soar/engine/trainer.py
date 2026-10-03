@@ -230,6 +230,9 @@ class BaseTrainer:
             samples=self.samples,
         )
 
+        if hasattr(train_dataset, "class_names") and train_dataset.class_names:
+            self.class_names = train_dataset.class_names
+
         val_dataset = None
         has_val = False
         try:
@@ -347,6 +350,7 @@ class BaseTrainer:
                 save_dir=str(self.checkpoint_dir / "val_visualizations") if self.rank == 0 else None,
                 dataloader=self.val_loader,
                 num_classes=self.num_classes,
+                class_names=self.class_names,
             )
             self.validator.dataloader = self.val_loader
             self.validator.val_loader = self.val_loader

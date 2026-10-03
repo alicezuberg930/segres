@@ -40,6 +40,7 @@ class BaseValidator:
         save_dir: Optional[str] = None,
         dataloader: Optional[DataLoader] = None,
         num_classes: int = 1,
+        class_names: Optional[Dict[int, str]] = None,
     ):
         self.model = model
         self.data_root = Path(data_root)
@@ -49,7 +50,14 @@ class BaseValidator:
         self.device = torch.device(device if (device == "cuda" and torch.cuda.is_available()) else "cpu")
         self.num_workers = num_workers
         self.save_dir = Path(save_dir) if save_dir else None
-        self.dataloader = dataloader
+        self._dataloader = dataloader
+        self.class_names = class_names or {}
+        if not self.class_names and dataloader is not None:
+            ds = getattr(dataloader, "dataset", None)
+            while hasattr(ds, "dataset"):
+                ds = ds.dataset
+            if hasattr(ds, "class_names") and ds.class_names:
+                self.class_names = ds.class_names
 
         self.model.to(self.device)
         self.model.eval()
@@ -58,11 +66,26 @@ class BaseValidator:
         self.metrics: Dict[str, Any] = {}
 
     @property
+    def dataloader(self) -> Optional[DataLoader]:
+        return self._dataloader
+
+    @dataloader.setter
+    def dataloader(self, loader: Optional[DataLoader]):
+        self._dataloader = loader
+        if not self.class_names and loader is not None:
+            ds = getattr(loader, "dataset", None)
+            while hasattr(ds, "dataset"):
+                ds = ds.dataset
+            if hasattr(ds, "class_names") and ds.class_names:
+                self.class_names = ds.class_names
+
+    @property
     def val_loader(self) -> Optional[DataLoader]:
-        return self.dataloader
+        return self._dataloader
 
     @val_loader.setter
     def val_loader(self, loader: Optional[DataLoader]):
+        self.dataloader = loader
         self.dataloader = loader
 
     def setup_data(self, split: str = "val"):
@@ -262,9 +285,14 @@ class BaseValidator:
         class_gt = self.metrics.get("class_gt", [])
         if len(class_ious) > 1:
             print("Per-class IoU breakdown:")
+            names_list = [str(self.class_names.get(c, f"Class_{c}")) for c in range(len(class_ious))]
+            max_len = max(len(name) for name in names_list) if names_list else 10
+            max_len = max(max_len, 10)
+
             for c_idx, c_iou in enumerate(class_ious):
+                label_name = str(self.class_names.get(c_idx, f"Class_{c_idx}"))
                 gt_note = " (no GT in split)" if (c_idx < len(class_gt) and class_gt[c_idx] == 0) else ""
-                print(f"  Class {c_idx:2d}: {c_iou:.4f}{gt_note}")
+                print(f"  {label_name:<{max_len}} : {c_iou:.4f}{gt_note}")
             print(f"{'-'*95}\n")
         else:
             print()

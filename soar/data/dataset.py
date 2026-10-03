@@ -270,9 +270,14 @@ class SegmentationDataset(Dataset):
         with open(ann_path, "r", encoding="utf-8") as f:
             coco_payload = json.load(f)
 
-        categories = sorted([cat["id"] for cat in coco_payload.get("categories", []) if "id" in cat])
-        if categories:
-            self.coco_cat_map = {cat_id: idx for idx, cat_id in enumerate(categories)}
+        raw_cats = coco_payload.get("categories", [])
+        sorted_cats = sorted([cat for cat in raw_cats if "id" in cat], key=lambda c: c["id"])
+        if sorted_cats:
+            self.coco_cat_map = {cat["id"]: idx for idx, cat in enumerate(sorted_cats)}
+            extracted_names = {idx: cat.get("name", f"class_{idx}") for idx, cat in enumerate(sorted_cats)}
+            self.class_names = extracted_names
+            if self.num_classes < len(self.class_names):
+                self.num_classes = len(self.class_names)
         else:
             self.coco_cat_map = {}
 
