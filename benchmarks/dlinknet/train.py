@@ -16,6 +16,7 @@ def train(
     project: str = "checkpoints/benchmarks",
     num_classes: int = 1,
     num_workers: int = 2,
+    loss_type: str = "soar",
 ):
     model = DLinkNet(in_channels=3, num_classes=num_classes)
     trainer = BenchmarkTrainer(
@@ -31,6 +32,7 @@ def train(
         checkpoint_dir=project,
         num_classes=num_classes,
         num_workers=num_workers,
+        loss_type=loss_type,
     )
     return trainer.train()
 
@@ -47,6 +49,7 @@ def parse_args():
     parser.add_argument("--project", type=str, default="checkpoints/benchmarks", help="Checkpoint dir")
     parser.add_argument("--num-classes", type=int, default=1, help="Num classes")
     parser.add_argument("--workers", type=int, default=2, help="Workers")
+    parser.add_argument("--loss", type=str, default="soar", choices=["soar", "standard"], help="soar or standard")
     return parser.parse_args()
 
 
@@ -63,4 +66,5 @@ if __name__ == "__main__":
         project=args.project,
         num_classes=args.num_classes,
         num_workers=args.workers,
+        loss_type=args.loss,
     )

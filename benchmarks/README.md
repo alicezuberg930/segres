@@ -139,3 +139,14 @@ predictions/benchmarks/<Model_Name>/
 │   └── ...
 └── benchmark_summary.json     # Standardized JSON with latency, FPS, and LaTeX row
 ```
+
+---
+
+## Controlled Supervision Protocol (`--loss {soar,standard}`)
+
+To meet top-tier Q1 journal peer-review standards (e.g., IEEE TPAMI, TIP, CVPR):
+- **`--loss soar` (Default)**: Trains the baseline under SOAR's full composite loss objective:
+  $$\mathcal{L}_{total} = \lambda_1 \mathcal{L}_{Focal} + \lambda_2 \mathcal{L}_{Dice} + \lambda_3 \mathcal{L}_{Boundary} + \lambda_4 \mathcal{L}_{clDice}$$
+  This strictly isolates **neural architecture** as the sole independent experimental variable, guaranteeing that performance advantages stem from SOAR's spatial-frequency inductive biases rather than supervision bias.
+- **`--loss standard`**: Trains using vanilla binary cross-entropy + Dice loss ($\mathcal{L}_{BCE} + \mathcal{L}_{Dice}$), used for ablation studies demonstrating how topological supervision affects classical vs. SOAR architectures.
+

@@ -22,6 +22,7 @@ def main():
     p_train.add_argument("--project", type=str, default="checkpoints/benchmarks", help="Checkpoint dir")
     p_train.add_argument("--num-classes", type=int, default=1, help="Num classes")
     p_train.add_argument("--workers", type=int, default=2, help="Dataloader workers")
+    p_train.add_argument("--loss", type=str, default="soar", choices=["soar", "standard"], help="Loss type: soar or standard")
 
     # Val
     p_val = subparsers.add_parser("val", help="Validate D-LinkNet checkpoint")
@@ -57,6 +58,7 @@ def main():
             project=args.project,
             num_classes=args.num_classes,
             num_workers=args.workers,
+            loss_type=args.loss,
         )
     elif args.command == "val":
         validate(

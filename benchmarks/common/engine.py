@@ -81,6 +81,7 @@ class BenchmarkTrainer:
         val_interval: int = 1,
         num_classes: Optional[int] = None,
         class_names: Optional[Dict[int, str]] = None,
+        loss_type: str = "soar",
     ):
         self.model = model
         self.model_name = model_name
@@ -98,6 +99,7 @@ class BenchmarkTrainer:
         self.checkpoint_dir = Path(checkpoint_dir).resolve() / self.model_name
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.val_interval = max(1, val_interval)
+        self.loss_type = loss_type.lower()
 
         # Dataset configuration
         self.cfg: Optional[DatasetConfig] = None
@@ -111,7 +113,11 @@ class BenchmarkTrainer:
 
         # Setup model and optimizers
         self.model.to(self.device)
-        self.criterion = CombinedSegmentationLoss()
+        if self.loss_type == "soar":
+            from soar.losses import SegmentationLoss as CompositeSegmentationLoss
+            self.criterion = CompositeSegmentationLoss()
+        else:
+            self.criterion = CombinedSegmentationLoss()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.epochs, eta_min=1e-6)
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.amp)
@@ -189,11 +195,17 @@ class BenchmarkTrainer:
         for batch in pbar:
             images = batch["image"].to(self.device, non_blocking=True)
             masks = batch["mask"].to(self.device, non_blocking=True)
+            valid_masks = batch.get("valid_mask")
+            if valid_masks is not None:
+                valid_masks = valid_masks.to(self.device, non_blocking=True)
 
             self.optimizer.zero_grad()
             with torch.cuda.amp.autocast(enabled=self.amp):
                 outputs = self.model(images)
-                loss = self.criterion(outputs, masks)
+                if self.loss_type == "soar":
+                    loss, _ = self.criterion(outputs, masks, valid_masks, epoch)
+                else:
+                    loss = self.criterion(outputs, masks)
 
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -239,6 +251,7 @@ class BenchmarkTrainer:
         print(f"Starting Benchmark Training: {self.model_name}")
         print(f"  - Model Parameters:  {num_params:.2f} M")
         print(f"  - Input Resolution:  {self.img_size[0]}x{self.img_size[1]}")
+        print(f"  - Loss Framework:    {'SOAR Composite (Focal+Dice+Boundary+clDice)' if self.loss_type == 'soar' else 'Standard (BCE+Dice)'}")
         print(f"  - Epochs:            {self.epochs}")
         print(f"  - Batch Size:        {self.batch_size}")
         print(f"  - Learning Rate:     {self.lr}")

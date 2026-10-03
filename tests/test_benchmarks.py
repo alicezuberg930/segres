@@ -110,8 +110,8 @@ def test_benchmark_training_and_inference():
         model = UNet(in_channels=3, num_classes=1, base_channels=16)
         ckpt_dir = root / "checkpoints"
 
-        # Train 1 epoch
-        trainer = BenchmarkTrainer(
+        # Train 1 epoch with SOAR composite loss
+        trainer_soar = BenchmarkTrainer(
             model=model,
             model_name="UNet_Test",
             data_root=yaml_path,
@@ -122,10 +122,31 @@ def test_benchmark_training_and_inference():
             amp=False,
             checkpoint_dir=ckpt_dir,
             num_workers=0,
+            loss_type="soar",
         )
-        res = trainer.train()
+        res = trainer_soar.train()
         assert res["best_epoch"] == 1
         assert (ckpt_dir / "UNet_Test" / "best.pt").is_file()
+
+        # Train 1 epoch with standard loss
+        model_std = UNet(in_channels=3, num_classes=1, base_channels=16)
+        trainer_std = BenchmarkTrainer(
+            model=model_std,
+            model_name="UNet_Std_Test",
+            data_root=yaml_path,
+            img_size=(64, 64),
+            epochs=1,
+            batch_size=1,
+            device="cpu",
+            amp=False,
+            checkpoint_dir=ckpt_dir,
+            num_workers=0,
+            loss_type="standard",
+        )
+        res_std = trainer_std.train()
+        assert res_std["best_epoch"] == 1
+        assert (ckpt_dir / "UNet_Std_Test" / "best.pt").is_file()
+
 
         # Run inference
         predictor = BenchmarkPredictor(

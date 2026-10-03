@@ -23,6 +23,7 @@ def main():
     p_train.add_argument("--num-classes", type=int, default=1, help="Num classes")
     p_train.add_argument("--workers", type=int, default=2, help="Dataloader workers")
     p_train.add_argument("--base-channels", type=int, default=64, help="Base channels")
+    p_train.add_argument("--loss", type=str, default="soar", choices=["soar", "standard"], help="Loss type: soar or standard")
 
     # Val
     p_val = subparsers.add_parser("val", help="Validate CS-Net checkpoint")
@@ -61,6 +62,7 @@ def main():
             num_classes=args.num_classes,
             num_workers=args.workers,
             base_channels=args.base_channels,
+            loss_type=args.loss,
         )
     elif args.command == "val":
         validate(

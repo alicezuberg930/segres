@@ -18,6 +18,7 @@ def train(
     num_classes: int = 1,
     num_workers: int = 2,
     base_channels: int = 64,
+    loss_type: str = "soar",
 ):
     model = UNet(in_channels=3, num_classes=num_classes, base_channels=base_channels)
     trainer = BenchmarkTrainer(
@@ -33,6 +34,7 @@ def train(
         checkpoint_dir=project,
         num_classes=num_classes,
         num_workers=num_workers,
+        loss_type=loss_type,
     )
     return trainer.train()
 
@@ -50,6 +52,7 @@ def parse_args():
     parser.add_argument("--num-classes", type=int, default=1, help="Number of foreground target classes")
     parser.add_argument("--workers", type=int, default=2, help="Number of dataloader worker processes")
     parser.add_argument("--base-channels", type=int, default=64, help="Base channel capacity")
+    parser.add_argument("--loss", type=str, default="soar", choices=["soar", "standard"], help="soar (Focal+Dice+Boundary+clDice) or standard (BCE+Dice)")
     return parser.parse_args()
 
 
@@ -67,4 +70,5 @@ if __name__ == "__main__":
         num_classes=args.num_classes,
         num_workers=args.workers,
         base_channels=args.base_channels,
+        loss_type=args.loss,
     )

@@ -17,6 +17,7 @@ def train(
     num_classes: int = 1,
     num_workers: int = 2,
     variant: str = "b0",
+    loss_type: str = "soar",
 ):
     model = SegFormer(in_channels=3, num_classes=num_classes, variant=variant)
     model_name = f"SegFormer_{variant.upper()}"
@@ -33,6 +34,7 @@ def train(
         checkpoint_dir=project,
         num_classes=num_classes,
         num_workers=num_workers,
+        loss_type=loss_type,
     )
     return trainer.train()
 
@@ -50,6 +52,7 @@ def parse_args():
     parser.add_argument("--num-classes", type=int, default=1, help="Num classes")
     parser.add_argument("--workers", type=int, default=2, help="Workers")
     parser.add_argument("--variant", type=str, default="b0", choices=["b0", "b1"], help="b0 (SegFormer-B0) or b1 (SegFormer-B1)")
+    parser.add_argument("--loss", type=str, default="soar", choices=["soar", "standard"], help="soar (Focal+Dice+Boundary+clDice) or standard (BCE+Dice)")
     return parser.parse_args()
 
 
@@ -67,4 +70,6 @@ if __name__ == "__main__":
         num_classes=args.num_classes,
         num_workers=args.workers,
         variant=args.variant,
+        loss_type=args.loss,
     )
+
