@@ -37,7 +37,7 @@ Real-time vision architectures derived from the You Only Look Once (YOLO) lineag
 
 To overcome these fundamental limits, this paper introduces \textbf{SOAR (Sub-Pixel Oriented Aggregation and Resolution-Preserving Network)}, an end-to-end convolutional framework engineered for high boundary fidelity, topological connectivity, and deterministic edge latency. SOAR incorporates: (i) an ultra-lightweight, zero-aliasing Wavelet Stem (\texttt{WaveStem}) utilizing 2D Haar discrete wavelet decomposition to preserve sub-pixel high-frequency edge gradients at stride $s2$ while slashing stem memory access cost by $>70\%$; (ii) a wide-receptive-field backbone driven by Large-Kernel Residual (LKR) depthwise blocks with zero-initialized Group Normalization ($\gamma \leftarrow 0$), guaranteeing numerical stability under $B=1$ micro-batches; (iii) a global frequency-domain spectral context module (\texttt{SpectralCtx}) at stride $s32$ capturing an infinite receptive field across the entire multi-megapixel canvas with strictly $\mathcal{O}(HW \log HW)$ complexity; (iv) a memory-efficient Gated Convex Cross-Resolution Fusion (\texttt{Fuse}) and Multi-Scale Aggregation (\texttt{Agg}) neck that adaptively balances deep contextual semantics with fine spatial skip pathways; (v) a sub-pixel periodic shuffling head (\texttt{SegHead}) performing direct $s2 \to s1$ super-resolution logit reconstruction to eliminate bilinear interpolation blur; and (vi) an equilibrated high-resolution tri-domain curriculum loss equilibrating Focal modulation, scale-invariant soft Dice, grouped Sobel boundary metrics, and warmup-scheduled continuous skeletonization ($\mathcal{L}_{\text{clDice}}$) to extinguish background gradient swamping. 
 
-Furthermore, we integrate SOAR with a unified YOLO-style one-stage supervised training paradigm, coupling Task-Aligned Assignment (TAL), dual-domain bounding box regression ($\mathcal{L}_{\text{CIoU}} + \mathcal{L}_{\text{DFL}}$), and dense sub-pixel mask supervision. SOAR natively ingests standard Ultralytics YOLO segmentation format (\texttt{data.yaml}) with normalized polygon vertices as well as MS COCO JSON annotations with multi-worker parallel rasterization. Benchmarked across MS COCO val2017 and multi-megapixel filament benchmarks, SOAR-Nano achieves 82.6\% clDice and 74.2\% Boundary IoU with only 0.85M parameters, outperforming YOLOv8n-seg and YOLO11n-seg by $>21\%$ in topological continuity while delivering real-time throughput ($>135$~FPS) at native $1024\times 1024$ resolution.
+Furthermore, we integrate SOAR with a unified end-to-end single-stage supervised training paradigm, coupling Task-Aligned Assignment (TAL), dual-domain bounding box regression ($\mathcal{L}_{\text{CIoU}} + \mathcal{L}_{\text{DFL}}$), and dense sub-pixel mask supervision. SOAR natively ingests standard Ultralytics YOLO segmentation format (\texttt{data.yaml}) with normalized polygon vertices as well as MS COCO JSON annotations with multi-worker parallel rasterization. Benchmarked across MS COCO val2017 and multi-megapixel filament benchmarks, SOAR-Nano achieves 82.6\% clDice and 74.2\% Boundary IoU with only 0.85M parameters, outperforming YOLOv8n-seg and YOLO11n-seg by $>21\%$ in topological continuity while delivering real-time throughput ($>135$~FPS) at native $1024\times 1024$ resolution.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -69,7 +69,7 @@ The principal contributions of this work are summarized as follows:
     \item \textbf{Gated Convex Cross-Resolution Fusion (\texttt{Fuse}) and Multi-Scale Aggregation (\texttt{Agg}):} We introduce an adaptive fusion mechanism that calculates dynamic spatial combination fields $G \in [0, 1]$, smoothly interpolating between fine stride $s2$ detail and deep $s32$ contextual features without heuristic addition or channel concatenation bloat.
     \item \textbf{Direct Sub-Pixel Logit Head (\texttt{SegHead}):} We synthesize native-resolution dense logit maps through sub-pixel periodic shuffling ($s2 \to s1$), completely eliminating bilinear prototype blurring while incorporating focal prior bias initialization ($\pi = 0.01$) to suppress background saturation from the first training iteration.
     \item \textbf{Tri-Domain High-Resolution Loss Equilibration:} We derive a mathematically equilibrated curriculum loss combining Focal-Dice modulation (which attenuates well-classified background gradients by $>400\times$), grouped depthwise Sobel boundary metrics, and warmup-scheduled continuous skeletonization ($\mathcal{L}_{\text{clDice}}$), resolving the $100\times$ gradient magnitude mismatch between pixel-level and regional objectives.
-    \item \textbf{Unified YOLO-Style One-Stage Training Pipeline:} We establish an end-to-end supervised training framework integrating anchor-free detection heads with the Task-Aligned Assigner (TAL), Complete IoU (CIoU), Distribution Focal Loss (DFL), and native sub-pixel mask supervision. This eliminates multi-stage training heuristics and enables SOAR to seamlessly ingest both Ultralytics YOLO dataset format (\texttt{data.yaml}) and MS COCO polygon coordinates.
+    \item \textbf{Unified End-to-End Supervised Training Protocol:} We establish an end-to-end dense supervised training framework integrating anchor-free detection heads with the Task-Aligned Assigner (TAL), Complete IoU (CIoU), Distribution Focal Loss (DFL), and native sub-pixel mask supervision. This eliminates multi-stage training heuristics and enables SOAR to seamlessly ingest both standardized dataset formats (\texttt{data.yaml}) and MS COCO polygon coordinates.
 \end{itemize}
 
 \section{Related Work}
@@ -83,8 +83,8 @@ To balance latency and feature expressiveness, neck designs have evolved from Fe
 \subsection{Topological Connectivity and High-Resolution Loss Dynamics}
 Standard volumetric segmentation metrics (Binary Cross-Entropy, Soft Dice, Lov\'asz-Softmax \cite{berman2018lovasz}) treat all spatial pixels uniformly. A thin one-pixel break across a winding filament incurs negligible volumetric loss ($<0.1\%$) but completely alters the topological connectivity of the system. To preserve global topology, Shit \emph{et al.} introduced clDice \cite{shit2021cldice}, which extracts differentiable skeletons via morphological erosion and evaluates intersection over union on the skeleton graphs. Similarly, boundary-aware losses \cite{kervadec2019boundary} penalize contour divergence via signed distance fields. In this work, we integrate continuous skeletonization and grouped Sobel boundary dynamics into a unified tri-domain curriculum loss specifically equilibrated for high-resolution edge training.
 
-\subsection{Label Assignment and Multi-Task Objectives in YOLO}
-Single-stage YOLO architectures have increasingly shifted from static heuristic matching (e.g., anchor-based max-IoU assignment in early detectors \cite{bochkovskiy2020yolov4}) to dynamic task-aligned assignment. YOLOX \cite{ge2021yolox} introduced SimOTA, formulating label assignment as an optimal transport problem. Modern YOLO variants (YOLOv8 \cite{yolov8}, YOLOv9 \cite{wang2024yolov9}, and YOLO11 \cite{yolov11}) utilize the Task-Aligned Assigner (TAL) \cite{feng2021tood}, where positive anchor selection is governed by a joint metric $t = s^\alpha \times \text{IoU}^\beta$ evaluating classification confidence $s$ and spatial bounding-box overlap $\text{IoU}$. In instance segmentation pipelines, however, YOLO-seg models restrict mask supervision to downsampled prototype bases ($H/4 \times W/4$) cropped by bounding boxes. In this work, we integrate task-aligned anchor assignment with direct, native-resolution sub-pixel mask supervision, enabling joint optimization of bounding boxes and topology-critical masks without prototype cropping artifacts.
+\subsection{Dynamic Label Assignment and Multi-Task Objectives}
+Single-stage dense prediction architectures have increasingly shifted from static heuristic matching (e.g., anchor-based max-IoU assignment in early detectors \cite{bochkovskiy2020yolov4}) to dynamic task-aligned assignment. YOLOX \cite{ge2021yolox} introduced SimOTA, formulating label assignment as an optimal transport problem. Modern YOLO variants (YOLOv8 \cite{yolov8}, YOLOv9 \cite{wang2024yolov9}, and YOLO11 \cite{yolov11}) utilize the Task-Aligned Assigner (TAL) \cite{feng2021tood}, where positive anchor selection is governed by a joint metric $t = s^\alpha \times \text{IoU}^\beta$ evaluating classification confidence $s$ and spatial bounding-box overlap $\text{IoU}$. In instance segmentation pipelines, however, YOLO-seg models restrict mask supervision to downsampled prototype bases ($H/4 \times W/4$) cropped by bounding boxes. In this work, we integrate task-aligned anchor assignment with direct, native-resolution sub-pixel mask supervision, enabling joint optimization of bounding boxes and topology-critical masks without prototype cropping artifacts.
 
 \section{Proposed Methodology}
 
@@ -97,6 +97,7 @@ The complete architectural layout of SOAR is depicted in Fig.~\ref{fig:architect
 
 \begin{figure*}[!t]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
     >=Stealth,
     font=\scriptsize,
@@ -196,7 +197,8 @@ The complete architectural layout of SOAR is depicted in Fig.~\ref{fig:architect
         \node [draw=blue!60!black, fill=blue!1, rounded corners=4pt, line width=0.5pt, fit=(lkr_in) (lkr_out) (lkr_dw) (lkr_scale)] {};
         \node [draw=orange!60!black, fill=orange!1, rounded corners=4pt, line width=0.5pt, fit=(fuse_skip) (fuse_low) (fuse_out) (fuse_gate)] {};
     \end{scope}
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \caption{Comprehensive Architectural Framework of the SOAR Baseline. Sub-pixel high-frequency spatial gradients are captured at native stride $s2$ by the zero-aliasing Wavelet Stem (\texttt{WaveStem}) and routed through a dedicated detail highway. Coarse contextual semantics are aggregated down to stride $s32$ via Large-Kernel Residual (LKR) depthwise blocks with zero-initialized Group Normalization ($\gamma \leftarrow 0$), augmented by global spectral context (\texttt{SpectralCtx}). The top-down Gated Convex Cross-Resolution Fusion (\texttt{Fuse}) neck dynamically interpolates spatial detail and semantic abstraction via continuous combination fields $G(u, v) \in [0, 1]$. Sub-pixel periodic shuffling (\texttt{SegHead}) directly synthesizes full-resolution logits ($s2 \to s1$) without bilinear interpolation blur.}
 \label{fig:architecture}
 \end{figure*}
@@ -381,9 +383,9 @@ To allow the network to establish coarse spatial localization before enforcing s
 \end{equation}
 where $E_{\text{warmup}} = 5$ epochs and $\lambda_{\text{target}} = 0.5$.
 
-\subsection{YOLO-Style Supervised Training and Multi-Task Formulation}
+\subsection{End-to-End Supervised Training and Multi-Task Formulation}
 
-To train SOAR in an end-to-end single-stage manner akin to modern YOLO architectures, we formulate a multi-task supervised objective coupling anchor-free bounding-box regression, task-aligned classification, and our high-resolution tri-domain mask loss:
+To train SOAR in an end-to-end single-stage supervised manner, we formulate a multi-task objective coupling anchor-free bounding-box regression, task-aligned classification, and our high-resolution tri-domain mask loss:
 \begin{equation}
 \mathcal{L}_{\text{total}} = \lambda_{\text{box}} \mathcal{L}_{\text{box}} + \lambda_{\text{dfl}} \mathcal{L}_{\text{dfl}} + \lambda_{\text{cls}} \mathcal{L}_{\text{cls}} + \lambda_{\text{mask}} \mathcal{L}_{\text{mask}}
 \end{equation}
@@ -414,21 +416,23 @@ where $s_{i,j}$ is the predicted class probability, $\alpha = 0.5$, and $\beta =
 \subsubsection{Native Sub-Pixel Mask Supervision ($\mathcal{L}_{\text{mask}}$)}
 Unlike conventional YOLO-seg pipelines that compute mask losses over cropped $H/4 \times W/4$ prototypes, SOAR supervises the native-resolution sub-pixel logit map $\mathbf{Z} \in \mathbb{R}^{B \times C \times H \times W}$ directly using the Tri-Domain High-Resolution loss $\mathcal{L}_{\text{mask}}$. This directly optimizes pixel-perfect boundary contours and continuous skeletons without box-clipping artifacts or bilinear blurring.
 
-\subsubsection{Universal YOLO Data Pipeline}
-SOAR provides native ingestion of standard Ultralytics YOLO segmentation YAML files (\texttt{data.yaml}). Annotations containing normalized polygon coordinates $(x_1, y_1, x_2, y_2, \dots, x_N, y_N) \in [0, 1]^2$ are rasterized into dense boolean binary masks using multi-worker parallel OpenCV scanline fill algorithms, enabling immediate training on any custom YOLO dataset alongside MS COCO JSON annotations.
+\subsubsection{Universal Dataset Ingestion and Data Pipeline}
+SOAR provides native ingestion of standardized segmentation configuration files (including standard \texttt{data.yaml} schemas). Annotations containing normalized polygon coordinates $(x_1, y_1, x_2, y_2, \dots, x_N, y_N) \in [0, 1]^2$ are rasterized into dense boolean binary masks using multi-worker parallel OpenCV scanline fill algorithms, enabling immediate training on custom dense polygon datasets alongside MS COCO JSON annotations.
 
 \section{Experimental Evaluation}
 
 \subsection{Architectural Model Scaling Tiers}
 The SOAR family provides scalable configurations spanning edge micro-controllers to high-throughput servers, summarized in Table~\ref{tab:models}.
 
-\begin{table}[!h]
+\begin{table}[!t]
 \centering
 \caption{Architectural Specification of the SOAR Baseline Family}
 \label{tab:models}
+\setlength{\tabcolsep}{3.5pt}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
-\textbf{Model} & \textbf{Params} & \textbf{FLOPs ($1024^2$)} & \textbf{Channels ($s2 \dots s32$)} & \textbf{Latency} \\
+\textbf{Model} & \textbf{Params} & \textbf{FLOPs ($1024^2$)} & \textbf{Channels ($s2\dots s32$)} & \textbf{Latency} \\
 \midrule
 SOAR-Nano1   & 0.85M  & 16.8 G  & [16, 32, 64, 128, 256]  & 7.1 ms \\
 SOAR-Small1  & 2.69M  & 45.4 G  & [24, 48, 96, 192, 384]  & 10.8 ms \\
@@ -436,7 +440,8 @@ SOAR-Medium1 & 6.45M  & 122.8 G & [32, 64, 128, 256, 512] & 18.5 ms \\
 SOAR-Large1  & 12.92M & 268.5 G & [32, 64, 160, 320, 640] & 32.2 ms \\
 SOAR-XLarge1 & 21.85M & 512.4 G & [40, 80, 192, 384, 768] & 54.6 ms \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 \subsection{Implementation Details and Training Protocol}
@@ -453,6 +458,8 @@ Table~\ref{tab:sota} presents comprehensive comparative benchmarks across both s
 \centering
 \caption{Comprehensive Benchmark Comparison on MS COCO val2017 and High-Resolution Geometry Manifolds ($1024\times 1024$)}
 \label{tab:sota}
+\setlength{\tabcolsep}{4.5pt}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{lcccccccc}
 \toprule
 \multirow{2}{*}{\textbf{Model Architecture}} & \multirow{2}{*}{\textbf{Params (M)}} & \multirow{2}{*}{\textbf{FLOPs (G)}} & \multicolumn{2}{c}{\textbf{MS COCO val2017}} & \multicolumn{2}{c}{\textbf{Geometry/Filament ($1024^2$)}} & \multicolumn{2}{c}{\textbf{Latency \& Speed (RTX 4090)}} \\
@@ -474,32 +481,36 @@ RT-DETR-R18 \cite{zhao2024detrs}             & 20.00 & 60.0  & 51.2 & 35.8 & 57.
 \textbf{SOAR-Medium1 (Ours)}                 & 6.45  & 122.8 & 56.4 & 39.5 & \textbf{81.8} & \textbf{90.2} & 18.5 & 54.1 \\
 \textbf{SOAR-Large1 (Ours)}                  & 12.92 & 268.5 & \textbf{58.8} & \textbf{43.0} & \textbf{84.5} & \textbf{92.6} & 32.2 & 31.1 \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table*}
 
 As demonstrated in Table~\ref{tab:sota}, SOAR-Nano achieves 82.6\% clDice and 74.2\% Boundary-IoU while utilizing only 0.85M parameters. Compared to YOLO11n-seg (2.90M parameters), SOAR-Nano delivers a $+21.4\%$ absolute gain in topological continuity (clDice) and a $+20.1\%$ improvement in boundary precision, while operating at $>140$ FPS on $1024\times 1024$ inputs.
 
-\subsection{YOLO-Style Training Optimization and Augmentation Ablation}
-Table~\ref{tab:training_ablation} investigates the empirical contribution of YOLO-style training strategies, label assignment algorithms, and data augmentations on high-resolution geometry manifolds ($1024\times 1024$).
+\subsection{Supervised Training Optimization and Augmentation Ablation}
+Table~\ref{tab:training_ablation} investigates the empirical contribution of progressive supervised training strategies, dynamic label assignment algorithms, and multi-scale data augmentations on high-resolution geometry manifolds ($1024\times 1024$).
 
-\begin{table}[!h]
+\begin{table}[!t]
 \centering
-\caption{Impact of YOLO-Style Training Optimization and Data Augmentations on High-Resolution Manifolds ($1024\times 1024$)}
+\caption{Impact of Supervised Training Strategies and Data Augmentations on High-Resolution Manifolds ($1024\times 1024$)}
 \label{tab:training_ablation}
+\setlength{\tabcolsep}{3pt}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
 \textbf{Training Strategy} & \textbf{$\text{mAP}_{50}^{\text{box}}$} & \textbf{$\text{mAP}_{50}^{\text{mask}}$} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} \\
 \midrule
-1. Baseline SGD (Step LR, No Aug)         & 44.2 & 41.5 & 58.4 & 66.2 \\
-2. + Cosine Annealing + Linear Warmup     & 46.8 & 44.1 & 62.1 & 70.5 \\
+1. Baseline SGD (Step LR)                & 44.2 & 41.5 & 58.4 & 66.2 \\
+2. + Cosine Annealing \& Warmup          & 46.8 & 44.1 & 62.1 & 70.5 \\
 3. + AdamW Optimizer ($\eta_0 = 10^{-3}$) & 49.3 & 46.5 & 65.8 & 73.9 \\
-4. + Task-Aligned Assigner (TAL)          & 52.1 & 49.2 & 68.4 & 76.5 \\
-5. + Exponential Moving Average (EMA)     & 53.4 & 50.4 & 70.1 & 78.2 \\
-6. + High-Res Mosaic (4-Tile Stitching)   & 54.8 & 51.5 & 71.9 & 80.1 \\
-7. + MixUp \& Random Affine Flips         & 55.6 & 52.1 & 72.8 & 81.2 \\
-8. \textbf{Full SOAR (Tri-Domain Loss)}   & \textbf{56.2} & \textbf{52.8} & \textbf{74.2} & \textbf{82.6} \\
+4. + Task-Aligned Assigner (TAL)         & 52.1 & 49.2 & 68.4 & 76.5 \\
+5. + Exponential Moving Average (EMA)    & 53.4 & 50.4 & 70.1 & 78.2 \\
+6. + High-Res Mosaic (4-Tile)            & 54.8 & 51.5 & 71.9 & 80.1 \\
+7. + MixUp \& Random Affine Flips        & 55.6 & 52.1 & 72.8 & 81.2 \\
+8. \textbf{Full SOAR Supervision}        & \textbf{56.2} & \textbf{52.8} & \textbf{74.2} & \textbf{82.6} \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 As demonstrated in Table~\ref{tab:training_ablation}, adopting the Task-Aligned Assigner (TAL) provides a substantial $+2.8\%$ increase in box mAP and $+2.7\%$ in mask mAP over static assignment, confirming that joint classification-localization quality scoring is essential. High-resolution Mosaic augmentation and EMA stabilization yield further boosts of $+2.7\%$ and $+1.7\%$ in Boundary-IoU, respectively, while the tri-domain loss secures the final $+2.5\%$ improvement in topological continuity (clDice).
@@ -507,24 +518,27 @@ As demonstrated in Table~\ref{tab:training_ablation}, adopting the Task-Aligned 
 \subsection{Architectural Component Ablation}
 Table~\ref{tab:ablation} systematically isolates each proposed architectural and objective component on SOAR-Nano1.
 
-\begin{table}[!h]
+\begin{table}[!t]
 \centering
 \caption{Component Isolation Ablation on SOAR-Nano1}
 \label{tab:ablation}
-\begin{tabular}{lcccc}
+\setlength{\tabcolsep}{3.5pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccc}
 \toprule
 \textbf{Ablation Configuration} & \textbf{mIoU (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} \\
 \midrule
-1. Baseline FCN + Bilinear Up              & 72.1 & 54.3 & 61.0 \\
-2. + GroupNorm ($B=1$ Micro-Batch Stability)& 75.4 & 58.2 & 65.4 \\
-3. + LKR ($k=7$) Wide Receptive Field      & 77.8 & 63.1 & 71.2 \\
-4. + WaveStem (Zero Spatial Aliasing DWT)  & 79.2 & 66.8 & 74.5 \\
-5. + SpectralCtx (Global 2D FFT Context)   & 80.1 & 68.4 & 76.9 \\
-6. + Gated Convex Fuse \& Agg              & 80.9 & 71.2 & 78.6 \\
-7. + Sub-Pixel SegHead ($s2\to s1$)        & 81.6 & 73.1 & 80.2 \\
-8. \textbf{Full SOAR (+ Tri-Domain Loss)}  & \textbf{82.3} & \textbf{74.2} & \textbf{82.6} \\
+1. Baseline FCN + Bilinear Up             & 72.1 & 54.3 & 61.0 \\
+2. + GroupNorm ($B=1$ Stability)          & 75.4 & 58.2 & 65.4 \\
+3. + LKR ($7\times 7$ Wide Field)        & 77.8 & 63.1 & 71.2 \\
+4. + WaveStem (Haar 2D DWT)               & 79.2 & 66.8 & 74.5 \\
+5. + SpectralCtx (Global 2D FFT)          & 80.1 & 68.4 & 76.9 \\
+6. + Gated Convex Fuse \& Agg             & 80.9 & 71.2 & 78.6 \\
+7. + Sub-Pixel SegHead ($s2\to s1$)       & 81.6 & 73.1 & 80.2 \\
+8. \textbf{Full SOAR Baseline}           & \textbf{82.3} & \textbf{74.2} & \textbf{82.6} \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 Transitioning from standard strided convolution to \texttt{WaveStem} provides a $+1.4\%$ leap in mIoU and $+3.3\%$ in clDice due to the preservation of high-frequency sub-pixel edge gradients. Sub-Pixel SegHead and Tri-Domain continuous skeleton loss contribute the definitive boundary fidelity gains.
@@ -532,10 +546,12 @@ Transitioning from standard strided convolution to \texttt{WaveStem} provides a 
 \subsection{Edge Accelerator Latency and Memory Access Cost}
 Table~\ref{tab:edge_bench} benchmarks inference latency across hardware profiles: desktop workstation (RTX 4090) versus embedded edge accelerator (NVIDIA Jetson Orin NX 16GB).
 
-\begin{table}[!h]
+\begin{table}[!t]
 \centering
 \caption{Edge Hardware Latency and Throughput ($1024\times 1024$)}
 \label{tab:edge_bench}
+\setlength{\tabcolsep}{2.5pt}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
 \multirow{2}{*}{\textbf{Model}} & \multicolumn{2}{c}{\textbf{RTX 4090 (ms / FPS)}} & \multicolumn{2}{c}{\textbf{Jetson Orin NX (ms / FPS)}} \\
@@ -548,13 +564,14 @@ YOLO11n-seg   & 5.8 / 172.4  & 3.1 / 322.5 & 26.8 / 37.3 & 15.4 / 64.9 \\
 \textbf{SOAR-Nano1}  & 7.1 / 140.8  & 3.8 / 263.2 & 31.2 / 32.1 & 17.2 / 58.1 \\
 \textbf{SOAR-Small1} & 10.8 / 92.6  & 5.6 / 178.6 & 44.8 / 22.3 & 25.1 / 39.8 \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
 Under TensorRT INT8 quantization, SOAR-Nano sustains 58.1 FPS on the 20W Jetson Orin NX, confirming its feasibility for high-resolution embedded robotics and industrial quality control lines.
 
 \section{Conclusion}
-This paper presented SOAR, a sub-pixel oriented, resolution-preserving neural architecture engineered to overcome the prototype-cropping, boundary-dilation, and gradient-swamping limitations of YOLO models in high-resolution, topology-critical dense prediction. By unifying Large-Kernel Residual depthwise blocks with zero-initialized Group Normalization, zero-aliasing Wavelet Stems (\texttt{WaveStem}), global frequency-domain spectral context (\texttt{SpectralCtx}), Gated Convex Cross-Resolution Fusion, direct sub-pixel periodic shuffling, and an equilibrated tri-domain loss within an end-to-end YOLO-style training pipeline, SOAR establishes state-of-the-art topological continuity and boundary fidelity at unprecedented parameter efficiency. Furthermore, SOAR seamlessly integrates with standard Ultralytics YOLO segmentation formats and MS COCO annotations, facilitating immediate edge deployment in automated defect inspection, medical diagnostics, and precision vision systems. Future work will investigate extending sub-pixel aggregation to 3D volumetric biomedical manifolds and hardware-native INT4 quantized representations.
+This paper presented SOAR, a sub-pixel oriented, resolution-preserving neural architecture engineered to overcome the prototype-cropping, boundary-dilation, and gradient-swamping limitations of YOLO models in high-resolution, topology-critical dense prediction. By unifying Large-Kernel Residual depthwise blocks with zero-initialized Group Normalization, zero-aliasing Wavelet Stems (\texttt{WaveStem}), global frequency-domain spectral context (\texttt{SpectralCtx}), Gated Convex Cross-Resolution Fusion, direct sub-pixel periodic shuffling, and an equilibrated tri-domain loss within an end-to-end dense supervised training pipeline, SOAR establishes state-of-the-art topological continuity and boundary fidelity at unprecedented parameter efficiency. Furthermore, SOAR seamlessly integrates with standardized polygon segmentation formats and MS COCO annotations, facilitating immediate edge deployment in automated defect inspection, medical diagnostics, and precision vision systems. Future work will investigate extending sub-pixel aggregation to 3D volumetric biomedical manifolds and hardware-native INT4 quantized representations.
 
 \bibliographystyle{IEEEtran}
 \begin{thebibliography}{10}

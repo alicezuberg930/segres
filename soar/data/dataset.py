@@ -32,7 +32,7 @@ class SegmentationDataset(Dataset):
     """General-purpose dense segmentation dataset for high-resolution imagery.
 
     Supports diverse scientific and raster file formats (.npy, .fits, .png,
-    etc.) and parses polygon/RLE annotations from standard COCO and YOLO-style
+    etc.) and parses polygon/RLE annotations from standard COCO and normalized polygon
     structures.
     """
 
