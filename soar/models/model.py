@@ -13,9 +13,11 @@ import yaml
 
 from ..nn.modules import (
     CBA,
+    WaveStem,
     Down,
     LKR,
     Ctx,
+    SpectralCtx,
     Fuse,
     Agg,
     SegHead,
@@ -34,8 +36,10 @@ from ..nn.modules import (
 #   head  : cls(c1, nc, mid, *args)   mid = args[0] * width
 REGISTRY: Dict[str, Tuple[Any, str]] = {
     "CBA": (CBA, "ch"),
+    "WaveStem": (WaveStem, "ch"),
     "Down": (Down, "ch"),
     "Ctx": (Ctx, "ch"),
+    "SpectralCtx": (SpectralCtx, "ch"),
     "LKR": (LKR, "keep"),
     "Fuse": (Fuse, "multi"),
     "Agg": (Agg, "multi"),

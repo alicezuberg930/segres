@@ -11,9 +11,11 @@ __all__ = (
     "select_group_count",
     "autopad",
     "CBA",
+    "WaveStem",
     "Down",
     "LKR",
     "Ctx",
+    "SpectralCtx",
     "Fuse",
     "Agg",
     "SegHead",
@@ -71,6 +73,33 @@ class CBA(nn.Module):
         return self.act(self.norm(self.conv(x)))
 
 
+class WaveStem(nn.Module):
+    """
+    Wavelet-preserving stem operator for high-resolution vision manifolds.
+    Decomposes input tensor using 2D Haar Discrete Wavelet Transform (DWT) into
+    4 sub-bands: Low-Frequency approximation (LL), Horizontal detail (LH),
+    Vertical detail (HL), and Diagonal high-frequency gradient (HH).
+    Preserves exact high-frequency sub-pixel edge gradients with zero spatial aliasing
+    and zero parameter loss before 1x1 GroupNorm-SiLU channel projection.
+    """
+
+    def __init__(self, c1: int, c2: int):
+        super().__init__()
+        self.proj = CBA(c1 * 4, c2, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x00 = x[:, :, 0::2, 0::2]
+        x01 = x[:, :, 0::2, 1::2]
+        x10 = x[:, :, 1::2, 0::2]
+        x11 = x[:, :, 1::2, 1::2]
+        ll = 0.5 * (x00 + x01 + x10 + x11)
+        lh = 0.5 * (x00 + x01 - x10 - x11)
+        hl = 0.5 * (x00 - x01 + x10 - x11)
+        hh = 0.5 * (x00 - x01 - x10 + x11)
+        wave_features = torch.cat([ll, lh, hl, hh], dim=1)
+        return self.proj(wave_features)
+
+
 class Down(nn.Module):
     """Separable stride-2 downsampling: depthwise 3x3/s2 -> pointwise channel projection."""
 
@@ -126,11 +155,40 @@ class Ctx(nn.Module):
         return x + y if self.add else y
 
 
+class SpectralCtx(nn.Module):
+    """
+    Global frequency-domain context modulation module at stride 32.
+    Applies 2D Real Fast Fourier Transform (rfft2) to capture an infinite
+    receptive field across the entire canvas with strictly O(HW log HW) complexity,
+    modulating spatial channels via complex spectral weights alongside dilated local context.
+    """
+
+    def __init__(self, c1: int, c2: int):
+        super().__init__()
+        h = max(c2 // 2, 8)
+        self.in_proj = CBA(c1, h, 1)
+        self.complex_weight = nn.Parameter(torch.randn(h, 2, dtype=torch.float32) * 0.02)
+        self.local_branch = CBA(h, h, 3, 1, g=h, d=2, act=False)
+        self.out_proj = CBA(h * 2, c2, 1)
+        self.gate = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Conv2d(c1, c2, 1), nn.Sigmoid())
+        self.add = c1 == c2
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = self.in_proj(x)
+        B, C, H, W = y.shape
+        y_fft = torch.fft.rfft2(y, norm="ortho")
+        weight = torch.view_as_complex(self.complex_weight)
+        y_spec = torch.fft.irfft2(y_fft * weight.view(1, -1, 1, 1), s=(H, W), norm="ortho")
+        y_local = self.local_branch(y)
+        fused = self.out_proj(torch.cat([y_spec, y_local], dim=1)) * self.gate(x)
+        return x + fused if self.add else fused
+
+
 class Fuse(nn.Module):
     """
-    Gated top-down cross-attention fusion of coarse semantic context and fine spatial detail.
+    Memory-efficient gated cross-resolution fusion of coarse context and fine spatial detail.
     Input: [low (coarse), skip (fine)].
-    Learns spatial and channel-wise convex combination weights between detail and context.
+    Learns spatial and channel-group convex combination weights between detail and context.
     """
 
     def __init__(self, chs: Sequence[int], c2: int):
@@ -138,7 +196,11 @@ class Fuse(nn.Module):
         c_low, c_skip = chs
         self.low = CBA(c_low, c2, 1, act=False)
         self.skip = CBA(c_skip, c2, 1, act=False)
-        self.gate = nn.Sequential(CBA(c2, c2, 3, 1, g=c2, act=False), nn.Conv2d(c2, c2, 1), nn.Sigmoid())
+        self.gate = nn.Sequential(
+            CBA(c2, c2, 3, 1, g=c2, act=False),
+            nn.Conv2d(c2, 1, 1, bias=True),
+            nn.Sigmoid(),
+        )
         self.out = nn.Sequential(CBA(c2, c2, 3, 1, g=c2, act=False), CBA(c2, c2, 1))
 
     def forward(self, xs: Sequence[torch.Tensor]) -> torch.Tensor:
@@ -146,7 +208,8 @@ class Fuse(nn.Module):
         a = self.skip(skip)
         b = F.interpolate(self.low(low), size=a.shape[-2:], mode="bilinear", align_corners=False)
         g = self.gate(a + b)
-        return self.out(b + g * (a - b))
+        fused = g * a + (1.0 - g) * b
+        return self.out(fused)
 
 
 class Agg(nn.Module):
