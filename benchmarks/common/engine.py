@@ -103,13 +103,17 @@ class BenchmarkTrainer:
 
         # Dataset configuration
         self.cfg: Optional[DatasetConfig] = None
-        if self.data_root.is_file() and self.data_root.suffix.lower() in (".yaml", ".yml"):
+        try:
             self.cfg = DatasetConfig.resolve(self.data_root)
-            self.num_classes = num_classes or (self.cfg.nc if self.cfg else 1)
-            self.class_names = class_names or (self.cfg.names if self.cfg else {})
+        except Exception:
+            self.cfg = None
+
+        if self.cfg and self.cfg.nc > 1 and (num_classes is None or num_classes == 1):
+            self.num_classes = self.cfg.nc
         else:
-            self.num_classes = num_classes or 1
-            self.class_names = class_names or {}
+            self.num_classes = num_classes or (self.cfg.nc if self.cfg else 1)
+        self.class_names = class_names or (self.cfg.names if self.cfg else {})
+
 
         # Setup model and optimizers
         self.model.to(self.device)

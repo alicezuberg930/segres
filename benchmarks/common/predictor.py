@@ -101,12 +101,15 @@ class BenchmarkPredictor:
     def setup_data(self, split: str = "val", samples: Optional[int] = None) -> None:
         """Initialize inference dataset."""
         cfg = None
-        if self.data_root.is_file() and self.data_root.suffix.lower() in (".yaml", ".yml"):
+        try:
             cfg = DatasetConfig.resolve(self.data_root)
-            if not self.num_classes or self.num_classes == 1:
+            if not self.num_classes or (self.num_classes == 1 and cfg.nc > 1):
                 self.num_classes = cfg.nc
-            if not self.class_names:
+            if not self.class_names and cfg.names:
                 self.class_names = cfg.names
+        except Exception:
+            cfg = None
+
 
         ann_path = cfg.annotation_files.get(split) if (cfg and cfg.annotation_files) else str(self.annotation_file) if self.annotation_file else None
         masks_path = cfg.mask_dirs.get(split) if (cfg and cfg.mask_dirs) else str(self.mask_dir) if self.mask_dir else None

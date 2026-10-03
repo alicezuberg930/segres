@@ -142,6 +142,7 @@ class DatasetConfig:
         Accepts:
         - A path to a dataset YAML file (e.g. 'data.yaml', 'coco8-seg.yaml')
         - A path to a directory containing 'data.yaml' or 'dataset.yaml'
+        - A path to a raw COCO directory (e.g. MAGFiLO with images and annotations JSON)
         - A path to a plain directory (COCO, polygon, or mask layout)
         """
         p = Path(data_input).resolve()
@@ -157,7 +158,133 @@ class DatasetConfig:
                 if yaml_file.is_file():
                     return cls.from_yaml(yaml_file)
 
-            # 3. Fallback: Standard directory structure without YAML
+            # 3. Auto-discover COCO datasets (e.g. MAGFiLO or MS COCO format)
+            coco_cfg = cls._auto_discover_coco(p)
+            if coco_cfg is not None:
+                return coco_cfg
+
+            # 4. Fallback: Standard directory structure without YAML
             return cls(root_path=p)
 
         raise FileNotFoundError(f"Cannot resolve dataset from path: {data_input}")
+
+    @classmethod
+    def _auto_discover_coco(cls, root: Path) -> Optional["DatasetConfig"]:
+        """Auto-discover COCO annotation JSON files and image directories."""
+        import json
+        import random
+
+        # Search for JSON files up to 2 directory levels deep
+        json_candidates: List[Path] = []
+        for pattern in ("*.json", "*/*.json", "*/*/*.json"):
+            json_candidates.extend(list(root.glob(pattern)))
+
+        coco_train_json: Optional[Path] = None
+        coco_val_json: Optional[Path] = None
+        coco_train_data: Optional[Dict[str, Any]] = None
+
+        for jf in sorted(json_candidates):
+            try:
+                with open(jf, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                if isinstance(d, dict) and "images" in d and "annotations" in d:
+                    stem_lower = jf.stem.lower()
+                    if "val" in stem_lower:
+                        coco_val_json = jf
+                    elif "train" in stem_lower or coco_train_json is None:
+                        coco_train_json = jf
+                        coco_train_data = d
+            except Exception:
+                continue
+
+        if coco_train_json is None or coco_train_data is None:
+            return None
+
+        # Extract classes from categories
+        raw_cats = coco_train_data.get("categories", [])
+        if raw_cats:
+            sorted_cats = sorted([c for c in raw_cats if "id" in c], key=lambda c: c["id"])
+            names = {idx: cat.get("name", f"class_{idx}") for idx, cat in enumerate(sorted_cats)}
+            nc = len(names)
+        else:
+            nc = 1
+            names = {0: "filament"}
+
+        # Discover image directory matching COCO image file names
+        images_info = coco_train_data.get("images", [])
+        if not images_info:
+            return None
+        sample_fname = images_info[0].get("file_name", "")
+
+        candidate_img_dirs = [
+            root / "train" / "train_images",
+            root / "train_images",
+            root / "images" / "train",
+            root / "train",
+            root / "images",
+            root,
+        ]
+        candidate_img_dirs.extend([d for d in root.glob("**/train_images") if d.is_dir()])
+        candidate_img_dirs.extend([d for d in root.glob("**/images") if d.is_dir()])
+
+        train_img_dir: Optional[Path] = None
+        for cd in candidate_img_dirs:
+            if cd.is_dir() and (cd / sample_fname).is_file():
+                train_img_dir = cd
+                break
+
+        if train_img_dir is None:
+            # Fallback: check if any directory has image files
+            for cd in candidate_img_dirs:
+                if cd.is_dir() and any(cd.glob("*.jpeg")) or any(cd.glob("*.jpg")) or any(cd.glob("*.png")):
+                    train_img_dir = cd
+                    break
+
+        if train_img_dir is None:
+            return None
+
+        # Collect all image files
+        all_imgs: List[Path] = []
+        for ext in ("*.jpeg", "*.jpg", "*.png", "*.JPEG", "*.JPG", "*.PNG"):
+            all_imgs.extend(list(train_img_dir.glob(ext)))
+        all_imgs = sorted(list(set(all_imgs)))
+
+        ann_files: Dict[str, Optional[Path]] = {
+            "train": coco_train_json,
+            "val": coco_val_json or coco_train_json,
+        }
+
+        # If separate validation set exists
+        if coco_val_json is not None and coco_val_json != coco_train_json:
+            val_img_dir = root / "val" / "val_images" if (root / "val" / "val_images").is_dir() else (root / "val" if (root / "val").is_dir() else train_img_dir)
+            return cls(
+                root_path=root,
+                train_images=train_img_dir,
+                val_images=val_img_dir,
+                nc=nc,
+                names=names,
+                annotation_files=ann_files,
+            )
+
+        # Unified dataset without separate validation directory (e.g. MAGFiLO Kaggle):
+        # Automatically partition into deterministic 80% train and 20% validation
+        rng = random.Random(42)
+        shuffled = list(all_imgs)
+        rng.shuffle(shuffled)
+        val_count = max(1, int(len(shuffled) * 0.2))
+        train_count = len(shuffled) - val_count
+
+        train_list = sorted(shuffled[:train_count])
+        val_list = sorted(shuffled[train_count:])
+
+        return cls(
+            root_path=root,
+            train_images=train_img_dir,
+            val_images=train_img_dir,
+            train_image_list=train_list,
+            val_image_list=val_list,
+            nc=nc,
+            names=names,
+            annotation_files=ann_files,
+        )
+
