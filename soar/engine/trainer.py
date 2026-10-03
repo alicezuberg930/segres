@@ -62,6 +62,7 @@ class BaseTrainer:
         sampler_mode: str = "hybrid",
         loss_cfg: Optional[Dict[str, Any]] = None,
         augment: bool = True,
+        samples: Optional[int] = None,
     ):
         self.model_cfg = model_cfg
         self.loss_cfg = loss_cfg
@@ -106,6 +107,7 @@ class BaseTrainer:
         self.positive_ratio = positive_ratio
         self.sampler_mode = sampler_mode
         self.augment = augment
+        self.samples = samples
 
         # Distributed training setup
         self.use_ddp = "RANK" in os.environ and "WORLD_SIZE" in os.environ
@@ -225,6 +227,7 @@ class BaseTrainer:
             mask_dir=train_mask_dir,
             image_dir=train_image_dir,
             image_files=train_image_files,
+            samples=self.samples,
         )
 
         val_dataset = None
@@ -245,6 +248,7 @@ class BaseTrainer:
                 mask_dir=val_mask_dir,
                 image_dir=val_image_dir,
                 image_files=val_image_files,
+                samples=self.samples,
             )
             if len(val_dataset) > 0 and set(val_dataset.image_files) != set(train_dataset.image_files):
                 has_val = True
@@ -260,13 +264,19 @@ class BaseTrainer:
             val_len = int(total_len * self.val_split)
             train_len = total_len - val_len
 
-            generator = torch.Generator().manual_seed(42)
-            shuffled_indices = torch.randperm(total_len, generator=generator).tolist()
-            train_indices = shuffled_indices[:train_len]
-            val_indices = shuffled_indices[train_len:]
+            if self.samples is not None or val_len == 0:
+                # Overfit / sample check mode: evaluate directly on sampled train dataset
+                train_ds = train_dataset
+                val_ds = train_dataset
+                val_len = total_len
+            else:
+                generator = torch.Generator().manual_seed(42)
+                shuffled_indices = torch.randperm(total_len, generator=generator).tolist()
+                train_indices = shuffled_indices[:train_len]
+                val_indices = shuffled_indices[train_len:]
 
-            train_ds = Subset(train_dataset, train_indices)
-            val_ds = Subset(train_dataset, val_indices) if val_len > 0 else None
+                train_ds = Subset(train_dataset, train_indices)
+                val_ds = Subset(train_dataset, val_indices)
 
         if self.use_ddp:
             train_sampler = DistributedSampler(train_ds, num_replicas=self.world_size, rank=self.rank, shuffle=True)

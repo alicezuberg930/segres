@@ -60,6 +60,7 @@ def parse_args():
     train_parser.add_argument("--num-classes", type=int, default=1, help="Number of classes")
     train_parser.add_argument("--annotation-file", type=str, default=None, help="COCO annotation file path")
     train_parser.add_argument("--no-augment", action="store_true", help="Disable all data augmentations (flips, rotations, jitter, blur)")
+    train_parser.add_argument("--samples", type=int, default=None, help="Number of images to sample from the dataset for training/overfit")
     train_parser.add_argument("--preprocess-mode", type=str, default="standard", choices=["minimal", "standard", "native"], help="Preprocessing mode: minimal (no transforms), standard (geometric only), native (keep original resolution)")
     train_parser.add_argument("--balance-sampler", action="store_true", help="Enable positive:negative tile ratio balancing in DataLoader")
     train_parser.add_argument("--positive-ratio", type=float, default=0.7, help="Target ratio of positive tiles when balance-sampler is enabled (default: 0.7)")
@@ -162,6 +163,7 @@ def train(args):
         sampler_mode=args.sampler_mode,
         loss_cfg=loss_cfg,
         augment=augment,
+        samples=args.samples,
     )
     
     # Start training

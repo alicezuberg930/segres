@@ -57,6 +57,7 @@ class SegmentationDataset(Dataset):
         preprocess_config: Optional[PreprocessConfig] = None,
         in_channels: int = 3,
         num_classes: int = 1,
+        samples: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.data_root = Path(data_root)
@@ -70,6 +71,7 @@ class SegmentationDataset(Dataset):
         self._explicit_image_dir = Path(image_dir) if image_dir else None
         self._explicit_labels_dir = Path(labels_dir) if labels_dir else None
         self._explicit_image_files = image_files
+        self.samples = samples
         self.coco_cat_map: Dict[int, int] = {}
         self.augment = augment and self.is_train
         self.use_cache = use_cache
@@ -112,6 +114,8 @@ class SegmentationDataset(Dataset):
         self.image_files = self._collect_image_files()
         if not self.image_files:
             raise FileNotFoundError(f"No valid image files found in {self.image_dir}")
+        if self.samples is not None and self.samples > 0:
+            self.image_files = self.image_files[:self.samples]
         self.file_map: Dict[str, Path] = {f.name: f for f in self.image_files}
         self.file_map.update({f.stem: f for f in self.image_files})
 
