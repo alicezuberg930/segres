@@ -163,7 +163,7 @@ def test_multiclass_segmentation():
         img = np.random.randint(0, 256, (640, 480, 3), dtype=np.uint8)
         cv2.imwrite(str(train_dir / "img1.png"), img)
 
-        # Write YOLO multi-class label: class 0, class 1, class 3
+        # Write multi-class polygon label: class 0, class 1, class 3
         with open(labels_dir / "img1.txt", "w") as f:
             f.write("0 0.2 0.2 0.3 0.2 0.3 0.3 0.2 0.3\n")
             f.write("2 0.5 0.5 0.7 0.5 0.7 0.7 0.5 0.7\n")

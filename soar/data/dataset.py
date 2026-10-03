@@ -190,7 +190,7 @@ class SegmentationDataset(Dataset):
         return sorted(files)
 
     def _load_annotations(self, annotation_file: Optional[str], mask_dir: Optional[str]) -> None:
-        """Parse annotations across COCO format, YOLO labels, or mask bitmaps.
+        """Parse annotations across COCO format, normalized polygon labels, or mask bitmaps.
         Prioritizes pre-rasterized mask directories to bypass expensive on-the-fly polygon parsing.
         """
         # 1. Prioritize explicit mask directory if provided
@@ -233,10 +233,10 @@ class SegmentationDataset(Dataset):
                 self._load_coco_annotations(ann_path)
                 return
 
-        # 4. Fall back to YOLO labels
-        yolo_labels_dir = self._resolve_yolo_labels_dir()
-        if yolo_labels_dir and yolo_labels_dir.is_dir():
-            self._load_yolo_annotations(yolo_labels_dir)
+        # 4. Fall back to polygon labels
+        polygon_labels_dir = self._resolve_polygon_labels_dir()
+        if polygon_labels_dir and polygon_labels_dir.is_dir():
+            self._load_polygon_annotations(polygon_labels_dir)
             return
 
         # 5. Fall back to standard candidate COCO JSON files
@@ -297,8 +297,8 @@ class SegmentationDataset(Dataset):
                 self.annotations[fname] = []
             self.annotations[fname].append(ann)
 
-    def _resolve_yolo_labels_dir(self) -> Optional[Path]:
-        """Locate YOLO label directory."""
+    def _resolve_polygon_labels_dir(self) -> Optional[Path]:
+        """Locate polygon label directory."""
         if self._explicit_labels_dir and self._explicit_labels_dir.is_dir():
             return self._explicit_labels_dir
 
@@ -335,15 +335,15 @@ class SegmentationDataset(Dataset):
                 return path
         return None
 
-    def _load_yolo_annotations(self, labels_dir: Path) -> None:
-        """Index YOLO annotations."""
+    def _load_polygon_annotations(self, labels_dir: Path) -> None:
+        """Index polygon annotations."""
         for label_file in labels_dir.glob("*.txt"):
             img_name = label_file.stem
-            self.img_to_masks[img_name] = "yolo"
+            self.img_to_masks[img_name] = "polygon"
             self.annotations[img_name] = str(label_file)
 
-    def _parse_yolo_annotation(self, label_file: Path, img_width: int, img_height: int) -> List[Dict[str, Any]]:
-        """Parse raw coordinates from YOLO text labels."""
+    def _parse_polygon_annotation(self, label_file: Path, img_width: int, img_height: int) -> List[Dict[str, Any]]:
+        """Parse raw coordinates from normalized polygon text labels."""
         annotations = []
         with open(label_file, "r") as f:
             for line in f:
@@ -474,19 +474,19 @@ class SegmentationDataset(Dataset):
             or self.img_to_masks.get(f"{stem}_mask")
         )
         if not mask_info:
-            # Check Ultralytics standard label path convention: /images/ -> /labels/, suffix -> .txt
+            # Check standard label path convention: /images/ -> /labels/, suffix -> .txt
             p_posix = img_path.as_posix()
             if "/images/" in p_posix:
                 cand_label = Path(p_posix.replace("/images/", "/labels/")).with_suffix(".txt")
                 if cand_label.is_file():
-                    self.img_to_masks[stem] = "yolo"
+                    self.img_to_masks[stem] = "polygon"
                     self.annotations[stem] = str(cand_label)
-                    mask_info = "yolo"
+                    mask_info = "polygon"
         if mask_info:
             if mask_info == "coco":
                 return self._generate_coco_mask(img_name, raw_shape)
-            elif mask_info == "yolo":
-                return self._generate_yolo_mask(img_name, raw_shape)
+            elif mask_info == "polygon":
+                return self._generate_polygon_mask(img_name, raw_shape)
             else:
                 mask_path = Path(mask_info)
                 if mask_path.exists():
@@ -562,8 +562,8 @@ class SegmentationDataset(Dataset):
 
         return np.ascontiguousarray(mask)
 
-    def _generate_yolo_mask(self, img_name: str, raw_shape: Optional[Tuple[int, int]] = None) -> Optional[np.ndarray]:
-        """Rasterize YOLO annotations into a binary or multi-class mask."""
+    def _generate_polygon_mask(self, img_name: str, raw_shape: Optional[Tuple[int, int]] = None) -> Optional[np.ndarray]:
+        """Rasterize normalized polygon annotations into a binary or multi-class mask."""
         label_file_path = self.annotations.get(img_name) or self.annotations.get(Path(img_name).stem)
         if not label_file_path:
             return None
@@ -578,7 +578,7 @@ class SegmentationDataset(Dataset):
             h, w = img.shape[:2]
 
         label_file = Path(label_file_path)
-        annotations = self._parse_yolo_annotation(label_file, w, h)
+        annotations = self._parse_polygon_annotation(label_file, w, h)
 
         if self.num_classes == 1:
             mask = np.zeros((h, w), dtype=np.float32)

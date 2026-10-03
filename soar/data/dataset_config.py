@@ -10,10 +10,10 @@ import yaml
 @dataclass
 class DatasetConfig:
     """
-    Unified Dataset Configuration supporting Ultralytics YOLO format, COCO format,
+    Unified Dataset Configuration supporting standard dataset YAML manifests, COCO format,
     and custom user-defined segmentation datasets.
 
-    Compatible with standard Ultralytics YAML schemas:
+    Compatible with standard dataset YAML schemas:
         path: /path/to/dataset     # dataset root dir (optional, defaults to yaml dir)
         train: images/train        # train images dir or train.txt file
         val: images/val            # val images dir or val.txt file
@@ -75,7 +75,7 @@ class DatasetConfig:
             if not sp.is_absolute():
                 sp = root / sp
 
-            # Handle text files containing lists of image paths (common in YOLO)
+            # Handle text files containing lists of image paths
             if sp.is_file() and sp.suffix.lower() == ".txt":
                 img_list = []
                 with open(sp, "r", encoding="utf-8") as tf:
@@ -142,7 +142,7 @@ class DatasetConfig:
         Accepts:
         - A path to a dataset YAML file (e.g. 'data.yaml', 'coco8-seg.yaml')
         - A path to a directory containing 'data.yaml' or 'dataset.yaml'
-        - A path to a plain directory (COCO, YOLO, or mask layout)
+        - A path to a plain directory (COCO, polygon, or mask layout)
         """
         p = Path(data_input).resolve()
 

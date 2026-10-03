@@ -16,8 +16,8 @@ from soar.data.dataset import SegmentationDataset
 from soar.engine.trainer import BaseTrainer
 
 
-def create_synthetic_yolo_dataset(root: Path):
-    """Create a minimal synthetic Ultralytics-style dataset with images and YOLO polygon labels."""
+def create_synthetic_polygon_dataset(root: Path):
+    """Create a minimal synthetic dataset with images and polygon labels."""
     train_img_dir = root / "images" / "train"
     val_img_dir = root / "images" / "val"
     train_lbl_dir = root / "labels" / "train"
@@ -71,7 +71,7 @@ def test_ultralytics_yaml_parsing():
     """Verify DatasetConfig parses Ultralytics YAML configurations correctly."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         root = Path(tmp_dir)
-        yaml_path = create_synthetic_yolo_dataset(root)
+        yaml_path = create_synthetic_polygon_dataset(root)
 
         cfg = DatasetConfig.resolve(yaml_path)
         assert cfg.nc == 2
@@ -80,11 +80,11 @@ def test_ultralytics_yaml_parsing():
         assert cfg.val_images == (root / "images" / "val").resolve()
 
 
-def test_yolo_segmentation_dataset_loading():
-    """Verify SegmentationDataset loads samples and correctly rasterizes YOLO polygon masks."""
+def test_polygon_segmentation_dataset_loading():
+    """Verify SegmentationDataset loads samples and correctly rasterizes polygon masks."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         root = Path(tmp_dir)
-        yaml_path = create_synthetic_yolo_dataset(root)
+        yaml_path = create_synthetic_polygon_dataset(root)
         cfg = DatasetConfig.resolve(yaml_path)
 
         # Multi-class loading (num_classes=2)
@@ -121,7 +121,7 @@ def test_trainer_integration_with_yaml():
     """Verify BaseTrainer automatically configures num_classes, splits, and trains on data.yaml."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         root = Path(tmp_dir)
-        yaml_path = create_synthetic_yolo_dataset(root)
+        yaml_path = create_synthetic_polygon_dataset(root)
 
         ckpt_dir = root / "checkpoints"
         trainer = BaseTrainer(
@@ -155,10 +155,10 @@ def test_trainer_integration_with_yaml():
 
 
 if __name__ == "__main__":
-    print("Testing Ultralytics YAML parsing...")
+    print("Testing dataset YAML parsing...")
     test_ultralytics_yaml_parsing()
-    print("Testing YOLO segmentation dataset loading...")
-    test_yolo_segmentation_dataset_loading()
+    print("Testing polygon segmentation dataset loading...")
+    test_polygon_segmentation_dataset_loading()
     print("Testing BaseTrainer integration with data.yaml...")
     test_trainer_integration_with_yaml()
-    print("All Ultralytics YAML, COCO, and YOLO segmentation tests passed successfully!")
+    print("All YAML, COCO, and polygon segmentation tests passed successfully!")
