@@ -22,6 +22,11 @@ from benchmarks import (
 
 SOAR_PRESETS: Dict[str, str] = {
     "soar": "configs/models/soar_medium1.yaml",
+    "soarmicro": "configs/models/soar_micro1.yaml",
+    "soarmicro1": "configs/models/soar_micro1.yaml",
+    "soartrm": "configs/models/soar_micro1.yaml",
+    "trm": "configs/models/soar_micro1.yaml",
+    "micro": "configs/models/soar_micro1.yaml",
     "soarnano": "configs/models/soar_nano1.yaml",
     "soarnano1": "configs/models/soar_nano1.yaml",
     "soarsmall": "configs/models/soar_small1.yaml",
@@ -41,6 +46,7 @@ def list_models() -> List[str]:
         "soar",
         "soar_trm",
         "soar_micro",
+        "soar_micro1",
         "soar_nano",
         "soar_small",
         "soar_medium",
@@ -80,7 +86,7 @@ def build_model(
 
     Args:
         model: Model name ('unet', 'dlinknet', 'csnet', 'bisenetv2', 'ddrnet', 'pidnet',
-               'segformer', 'soar'), YAML config file path, or nn.Module instance.
+               'segformer', 'soar', 'soar-trm', 'soar_micro1'), YAML config file path, or nn.Module instance.
         in_channels: Number of input image channels (default: 3).
         num_classes: Number of target segmentation classes (default: 1).
         verbose: Whether to log model creation and parameter counts.
@@ -92,7 +98,7 @@ def build_model(
         return model
 
     if isinstance(model, dict):
-        return SegmentationModel(cfg=model, ch=in_channels, nc=num_classes, verbose=verbose)
+        return SegmentationModel(cfg=model, ch=in_channels, nc=num_classes, verbose=verbose, **kwargs)
 
     model_str = str(model).strip()
     norm_key = model_str.lower().replace("-", "").replace("_", "")
@@ -106,31 +112,17 @@ def build_model(
                 print(f"[{cls.__name__}] Initialized with in_channels={in_channels}, num_classes={num_classes} ({params_m:.2f}M params)")
             return net
 
-    # 2. Check SOAR-TRM (Micro Recursive Model)
-    if norm_key in ("soartrm", "trm", "soarmicro", "micro"):
-        net = SOARTinyRecursiveModel(
-            in_channels=in_channels,
-            num_classes=num_classes,
-            hidden_channels=kwargs.get("hidden_channels", 32),
-            num_steps=kwargs.get("num_steps", 3),
-            use_checkpointing=kwargs.get("use_checkpointing", True),
-        )
-        if verbose:
-            params_k = net.num_parameters / 1e3
-            print(f"[SOAR-TRM] Initialized Micro Recursive Model with in_channels={in_channels}, num_classes={num_classes} ({params_k:.1f}k params)")
-        return net
-
-    # 3. Check SOAR presets
+    # 2. Check SOAR presets (including soar-trm, soar_micro1, etc.)
     for preset_name, rel_path in SOAR_PRESETS.items():
         if norm_key == preset_name:
             resolved = _resolve_yaml_path(rel_path)
             if resolved:
-                return SegmentationModel(cfg=str(resolved), ch=in_channels, nc=num_classes, verbose=verbose)
+                return SegmentationModel(cfg=str(resolved), ch=in_channels, nc=num_classes, verbose=verbose, **kwargs)
 
     # 3. Check if path to YAML file
     resolved_yaml = _resolve_yaml_path(model_str)
     if resolved_yaml:
-        return SegmentationModel(cfg=str(resolved_yaml), ch=in_channels, nc=num_classes, verbose=verbose)
+        return SegmentationModel(cfg=str(resolved_yaml), ch=in_channels, nc=num_classes, verbose=verbose, **kwargs)
 
     # If it ends with .yaml but wasn't found
     if model_str.endswith(".yaml") or model_str.endswith(".yml"):

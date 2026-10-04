@@ -63,13 +63,19 @@ def make_divisible(x: float, divisor: int = 8) -> int:
 
 
 def guess_scale(cfg: Union[str, Path]) -> Optional[str]:
-    """Infer scale variant ('n', 's', 'm', 'l', 'x') from filename."""
+    """Infer scale variant ('u', 'n', 's', 'm', 'l', 'x') from filename."""
     if isinstance(cfg, (str, Path)):
         stem = Path(cfg).stem.lower()
-        m = re.search(r"soar\d*([nsmlx])$", stem) or re.search(r"soar_([nsmlx])", stem) or re.search(r"soar_(nano|small|medium|large|xlarge)", stem)
+        if "micro" in stem or "trm" in stem:
+            return "micro"
+        m = (
+            re.search(r"soar\d*([unsmlx])$", stem)
+            or re.search(r"soar_([unsmlx])", stem)
+            or re.search(r"soar_(micro|nano|small|medium|large|xlarge)", stem)
+        )
         if m:
             val = m.group(1)
-            mapping = {"nano": "n", "small": "s", "medium": "m", "large": "l", "xlarge": "x"}
+            mapping = {"micro": "micro", "u": "micro", "nano": "n", "small": "s", "medium": "m", "large": "l", "xlarge": "x"}
             return mapping.get(val, val)
     return None
 
@@ -185,6 +191,7 @@ class SegmentationModel(nn.Module):
         nc: Optional[int] = None,
         scale: Optional[str] = None,
         verbose: bool = True,
+        **kwargs,
     ):
         super().__init__()
         if isinstance(cfg, dict):
@@ -215,26 +222,81 @@ class SegmentationModel(nn.Module):
 
         self.nc = self.yaml.get("nc", 1)
         self.names = {i: f"{i}" for i in range(self.nc)}
-        self.model, self.save, self.out_ch = parse_model(self.yaml, ch)
 
-        # Precompute reference counts for eager activation cleanup
-        counts: Dict[int, int] = {}
-        for m in self.model:
-            if m.f != -1:
-                refs = list(m.f) if isinstance(m.f, (list, tuple)) else [m.f]
-                for r in refs:
-                    if r != -1:
-                        counts[r] = counts.get(r, 0) + 1
-        self._consumer_counts = counts
+        model_type = str(self.yaml.get("type", "")).lower()
+        self.is_recursive = (
+            model_type in ("recursive_micro", "soar_trm", "trm", "micro")
+            or str(self.scale).lower() in ("micro", "u")
+            or "architecture" in self.yaml
+        )
+
+        if self.is_recursive:
+            from .soar_trm import SOARTinyRecursiveModel
+            arch_cfg = self.yaml.get("architecture", {}) if isinstance(self.yaml.get("architecture"), dict) else {}
+            hidden_channels = kwargs.get(
+                "hidden_channels",
+                arch_cfg.get("hidden_channels", self.yaml.get("hidden_channels", 32)),
+            )
+            num_steps = kwargs.get(
+                "num_steps",
+                arch_cfg.get("num_steps", self.yaml.get("num_steps", 3)),
+            )
+            use_checkpointing = kwargs.get(
+                "use_checkpointing",
+                arch_cfg.get("use_checkpointing", self.yaml.get("use_checkpointing", True)),
+            )
+
+            self.micro_model = SOARTinyRecursiveModel(
+                in_channels=ch,
+                num_classes=self.nc,
+                hidden_channels=hidden_channels,
+                num_steps=num_steps,
+                use_checkpointing=use_checkpointing,
+            )
+            self.model = self.micro_model
+            self.save = []
+            self.out_ch = [self.nc]
+            self._consumer_counts = {}
+        else:
+            self.model, self.save, self.out_ch = parse_model(self.yaml, ch)
+
+            # Precompute reference counts for eager activation cleanup
+            counts: Dict[int, int] = {}
+            for m in self.model:
+                if m.f != -1:
+                    refs = list(m.f) if isinstance(m.f, (list, tuple)) else [m.f]
+                    for r in refs:
+                        if r != -1:
+                            counts[r] = counts.get(r, 0) + 1
+            self._consumer_counts = counts
 
         self._check(ch, verbose)
 
-    def forward(self, x: torch.Tensor, return_features: bool = False) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def forward(
+        self,
+        x: torch.Tensor,
+        return_features: bool = False,
+        steps: Optional[int] = None,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Forward pass with auto-padding to multiples of 32 and eager activation deallocation.
         Returns full-resolution logits matching input spatial dimensions (B, nc, H, W).
         If return_features=True, returns tuple of (logits, penultimate_features).
         """
+        if self.is_recursive:
+            h, w = x.shape[-2:]
+            ph = (-h) % 2
+            pw = (-w) % 2
+            if ph or pw:
+                x = F.pad(x, (0, pw, 0, ph), mode="reflect" if (ph < h and pw < w) else "replicate")
+
+            logits = self.micro_model(x, steps=steps)
+            logits = logits[..., :h, :w]
+            if return_features:
+                penultimate_feat = self.micro_model.extract_features(x)
+                return logits, penultimate_feat
+            return logits
+
         h, w = x.shape[-2:]
         ph = (-h) % DIVISOR
         pw = (-w) % DIVISOR
@@ -279,6 +341,9 @@ class SegmentationModel(nn.Module):
 
     def extract_features(self, x: torch.Tensor) -> torch.Tensor:
         """Extract high-resolution penultimate feature representation prior to SegHead."""
+        if self.is_recursive:
+            return self.micro_model.extract_features(x)
+
         h, w = x.shape[-2:]
         ph = (-h) % DIVISOR
         pw = (-w) % DIVISOR
@@ -324,11 +389,6 @@ class SegmentationModel(nn.Module):
     def _check(self, ch: int, verbose: bool) -> None:
         """Verify output stride integrity at build time and display architecture metrics."""
         size = 64
-        shapes: Dict[int, Tuple[int, ...]] = {}
-        hooks = [
-            m.register_forward_hook(lambda _m, _i, o, k=m.i: shapes.__setitem__(k, tuple(o.shape[1:])))
-            for m in self.model
-        ]
         was_training = self.training
         self.eval()
         try:
@@ -336,8 +396,6 @@ class SegmentationModel(nn.Module):
             dummy = torch.zeros(1, ch, size, size, device=device)
             out = self.forward(dummy)
         finally:
-            for hk in hooks:
-                hk.remove()
             self.train(was_training)
 
         if tuple(out.shape) != (1, self.nc, size, size):
@@ -347,8 +405,33 @@ class SegmentationModel(nn.Module):
             )
 
         if verbose:
-            print(f"{'idx':>3} {'from':>12} {'n':>2} {'module':<10} {'params':>10}  {'out (C,stride)':<14}")
-            for m in self.model:
-                c, hh = shapes[m.i][0], shapes[m.i][1]
-                print(f"{m.i:>3} {str(m.f):>12} {m.n:>2} {m.mname:<10} {m.np:>10,}  ({c}, s{size // hh})")
-            print(f"SOAR1-{self.scale}: {len(self.model)} layers, {self.n_params() / 1e6:.2f}M parameters\n")
+            if self.is_recursive:
+                p_stem = sum(p.numel() for p in self.micro_model.stem.parameters())
+                p_cell = sum(p.numel() for p in self.micro_model.cell.parameters())
+                total_p = self.n_params()
+                print(f"{'idx':>3} {'component':<25} {'params':>10}  {'type':<20}")
+                print(f"{0:>3} {'HaarWavelet2D':<25} {0:>10}  {'parameter-free DWT'}")
+                print(f"{1:>3} {'WaveStem':<25} {p_stem:>10,}  {'conv static stem'}")
+                print(f"{2:>3} {'TRMRecurrentCell':<25} {p_cell:>10,}  {'recursive core (T=' + str(self.micro_model.num_steps) + ')'}")
+                print(f"{3:>3} {'HaarIDWT Head':<25} {0:>10}  {'parameter-free IDWT'}")
+                print(f"SOAR1-{self.scale}: {total_p:,} parameters ({total_p / 1e6:.3f}M)\n")
+            else:
+                shapes: Dict[int, Tuple[int, ...]] = {}
+                hooks = [
+                    m.register_forward_hook(lambda _m, _i, o, k=m.i: shapes.__setitem__(k, tuple(o.shape[1:])))
+                    for m in self.model
+                ]
+                self.eval()
+                try:
+                    dummy = torch.zeros(1, ch, size, size, device=device)
+                    _ = self.forward(dummy)
+                finally:
+                    for hk in hooks:
+                        hk.remove()
+                    self.train(was_training)
+
+                print(f"{'idx':>3} {'from':>12} {'n':>2} {'module':<10} {'params':>10}  {'out (C,stride)':<14}")
+                for m in self.model:
+                    c, hh = shapes[m.i][0], shapes[m.i][1]
+                    print(f"{m.i:>3} {str(m.f):>12} {m.n:>2} {m.mname:<10} {m.np:>10,}  ({c}, s{size // hh})")
+                print(f"SOAR1-{self.scale}: {len(self.model)} layers, {self.n_params() / 1e6:.2f}M parameters\n")

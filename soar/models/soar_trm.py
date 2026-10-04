@@ -66,6 +66,16 @@ class SOARTinyRecursiveModel(nn.Module):
         """Total trainable parameter count."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
+    def n_params(self) -> int:
+        """Total parameter count."""
+        return sum(p.numel() for p in self.parameters())
+
+    def extract_features(self, x: torch.Tensor) -> torch.Tensor:
+        """Extract penultimate feature representation (static stem image embedding e_x)."""
+        ll, lh, hl, hh = self.wavelet.dwt(x)
+        dwt_features = torch.cat([ll, lh, hl, hh], dim=1)
+        return self.stem(dwt_features)
+
     def forward(
         self,
         x: torch.Tensor,

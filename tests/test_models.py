@@ -8,8 +8,10 @@ import torch
 from soar import SegmentationModel
 
 def test_model_initialization():
-    """Verify all 5 resolution-aware SOAR1 models instantiate and output correct spatial shapes."""
+    """Verify all resolution-aware SOAR1 models instantiate and output correct spatial shapes."""
     configs = [
+        "configs/models/soar_micro1.yaml",
+        "configs/models/soar_trm.yaml",
         "configs/models/soar_nano1.yaml",
         "configs/models/soar_small1.yaml",
         "configs/models/soar_medium1.yaml",
