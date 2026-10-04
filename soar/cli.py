@@ -188,7 +188,7 @@ def train(args):
     print(f"  - Resolution:    {img_size[0]}x{img_size[1]}")
     print(f"  - Classes:       {num_classes}")
     print(f"  - Epochs:        {args.epochs}")
-    print(f"  - Batch Size:    1")
+    print(f"  - Batch Size:    {args.batch_size}")
     print(f"  - Device:        {args.device}")
     print(f"  - Mixed Prec.:   {args.amp}")
     print(f"  - Loss Type:     {args.loss}")
@@ -212,7 +212,7 @@ def train(args):
         model_cfg=args.model,
         data_root=args.data,
         img_size=img_size,
-        batch_size=1,
+        batch_size=args.batch_size,
         accumulate_grad_batches=args.accumulate_grad_batches,
         epochs=args.epochs,
         lr=args.lr,
