@@ -422,7 +422,7 @@ class SegmentationDataset(Dataset):
                 if len(parts) > 5:
                     coords = list(map(float, parts[1:]))
                     polygon = []
-                    for i in range(0, len(coords), 2):
+                    for i in range(0, len(coords) - 1, 2):
                         x = int(coords[i] * img_width)
                         y = int(coords[i + 1] * img_height)
                         polygon.extend([x, y])

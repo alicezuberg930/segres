@@ -364,76 +364,83 @@ class BaseValidator:
         mask_tensor = item["mask"]
         prob_tensor = item["prob"]
 
-        img_np = img_tensor.float().numpy()
-        if img_np.ndim == 2:
-            img_np = np.stack([img_np] * 3, axis=0)
-        elif img_np.shape[0] == 1:
-            img_np = np.repeat(img_np, 3, axis=0)
-        elif img_np.shape[0] > 3:
-            img_np = img_np[:3]
+        try:
+            img_np = img_tensor.float().numpy()
+            if img_np.ndim == 2:
+                img_np = np.stack([img_np] * 3, axis=0)
+            elif img_np.shape[0] == 1:
+                img_np = np.repeat(img_np, 3, axis=0)
+            elif img_np.shape[0] > 3:
+                img_np = img_np[:3]
 
-        img_np = np.transpose(img_np, (1, 2, 0))
-        if img_np.max() <= 1.5 and img_np.min() >= -0.5:
-            img_np = np.clip((img_np - img_np.min()) / (img_np.max() - img_np.min() + 1e-6) * 255.0, 0, 255)
-        img_np = img_np.astype(np.uint8)
-        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+            img_np = np.transpose(img_np, (1, 2, 0))
+            v_min = float(img_np.min())
+            v_max = float(img_np.max())
+            if v_max <= 1.5 and v_min >= -0.5:
+                scale = 255.0 / max(v_max - v_min, 1e-6)
+                img_np = np.clip((img_np - v_min) * scale, 0, 255).astype(np.uint8)
+            else:
+                img_np = np.clip(img_np, 0, 255).astype(np.uint8)
+            img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
-        h, w = img_bgr.shape[:2]
-        mask_np = mask_tensor.float().numpy()
-        prob_np = prob_tensor.float().numpy()
-        k_classes = mask_np.shape[0]
+            h, w = img_bgr.shape[:2]
+            mask_np = mask_tensor.float().numpy()
+            prob_np = prob_tensor.float().numpy()
+            k_classes = mask_np.shape[0]
 
-        palette = [
-            (0, 0, 255),    # Red
-            (0, 255, 0),    # Green
-            (255, 255, 0),  # Cyan
-            (0, 255, 255),  # Yellow
-            (255, 0, 255),  # Magenta
-            (0, 165, 255),  # Orange
-            (255, 128, 0),  # Blue
-            (128, 255, 0),  # Light green
-        ]
+            palette = [
+                (0, 0, 255),    # Red
+                (0, 255, 0),    # Green
+                (255, 255, 0),  # Cyan
+                (0, 255, 255),  # Yellow
+                (255, 0, 255),  # Magenta
+                (0, 165, 255),  # Orange
+                (255, 128, 0),  # Blue
+                (128, 255, 0),  # Light green
+            ]
 
-        gt_colored = np.zeros((h, w, 3), dtype=np.uint8)
-        pred_colored = np.zeros((h, w, 3), dtype=np.uint8)
+            gt_colored = np.zeros((h, w, 3), dtype=np.uint8)
+            pred_colored = np.zeros((h, w, 3), dtype=np.uint8)
 
-        for c in range(k_classes):
-            color = palette[c % len(palette)]
-            m_c = mask_np[c] > 0.5
-            p_c = prob_np[c] >= 0.5
-            for ch in range(3):
-                gt_colored[:, :, ch] = np.maximum(gt_colored[:, :, ch], m_c * color[ch])
-                pred_colored[:, :, ch] = np.maximum(pred_colored[:, :, ch], p_c * color[ch])
+            for c in range(k_classes):
+                color = palette[c % len(palette)]
+                m_c = mask_np[c] > 0.5
+                p_c = prob_np[c] >= 0.5
+                for ch in range(3):
+                    gt_colored[:, :, ch] = np.maximum(gt_colored[:, :, ch], m_c * color[ch])
+                    pred_colored[:, :, ch] = np.maximum(pred_colored[:, :, ch], p_c * color[ch])
 
-        overlay = img_bgr.copy()
-        p_any = np.any(pred_colored > 0, axis=-1)
-        overlay[p_any] = cv2.addWeighted(img_bgr, 0.5, pred_colored, 0.5, 0)[p_any]
+            overlay = img_bgr.copy()
+            p_any = np.any(pred_colored > 0, axis=-1)
+            overlay[p_any] = cv2.addWeighted(img_bgr, 0.5, pred_colored, 0.5, 0)[p_any]
 
-        panels = [img_bgr, gt_colored, pred_colored, overlay]
-        titles = ["Input Image", "Ground Truth", "Prediction (p >= 0.5)", "Overlay"]
-        for p, title in zip(panels, titles):
-            cv2.rectangle(p, (0, 0), (p.shape[1], 26), (30, 30, 30), -1)
-            cv2.putText(p, title, (10, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+            panels = [img_bgr, gt_colored, pred_colored, overlay]
+            titles = ["Input Image", "Ground Truth", "Prediction (p >= 0.5)", "Overlay"]
+            for p, title in zip(panels, titles):
+                cv2.rectangle(p, (0, 0), (p.shape[1], 26), (30, 30, 30), -1)
+                cv2.putText(p, title, (10, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
-        strip = np.hstack(panels)
+            strip = np.hstack(panels)
 
-        # Legend banner at the bottom with real class labels
-        legend_h = 32
-        legend_bar = np.full((legend_h, strip.shape[1], 3), 25, dtype=np.uint8)
-        x_offset = 15
-        for c in range(k_classes):
-            color = palette[c % len(palette)]
-            name = self.class_names[c] if (self.class_names and c < len(self.class_names)) else f"Class {c}"
-            # Draw color swatch
-            cv2.rectangle(legend_bar, (x_offset, 8), (x_offset + 16, 24), color, -1)
-            cv2.rectangle(legend_bar, (x_offset, 8), (x_offset + 16, 24), (200, 200, 200), 1)
-            # Draw label
-            text = f" {name} "
-            cv2.putText(legend_bar, text, (x_offset + 20, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (230, 230, 230), 1, cv2.LINE_AA)
-            text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
-            x_offset += 24 + text_size[0] + 15
+            # Legend banner at the bottom with real class labels
+            legend_h = 32
+            legend_bar = np.full((legend_h, strip.shape[1], 3), 25, dtype=np.uint8)
+            x_offset = 15
+            for c in range(k_classes):
+                color = palette[c % len(palette)]
+                name = self.class_names[c] if (self.class_names and c < len(self.class_names)) else f"Class {c}"
+                # Draw color swatch
+                cv2.rectangle(legend_bar, (x_offset, 8), (x_offset + 16, 24), color, -1)
+                cv2.rectangle(legend_bar, (x_offset, 8), (x_offset + 16, 24), (200, 200, 200), 1)
+                # Draw label
+                text = f" {name} "
+                cv2.putText(legend_bar, text, (x_offset + 20, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (230, 230, 230), 1, cv2.LINE_AA)
+                text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+                x_offset += 24 + text_size[0] + 15
 
-        strip = np.vstack([strip, legend_bar])
+            strip = np.vstack([strip, legend_bar])
 
-        out_path = self.save_dir / f"val_sample_{idx}.png"
-        cv2.imwrite(str(out_path), strip, [cv2.IMWRITE_PNG_COMPRESSION, 2])
+            out_path = self.save_dir / f"val_sample_{idx}.png"
+            cv2.imwrite(str(out_path), strip, [cv2.IMWRITE_PNG_COMPRESSION, 2])
+        except Exception:
+            pass

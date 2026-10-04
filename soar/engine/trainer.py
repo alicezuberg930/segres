@@ -525,10 +525,13 @@ class BaseTrainer:
             if self.rank == 0:
                 self.validator.print_results(epoch=epoch + 1)
                 
-                epoch_vis_dir = self.checkpoint_dir / "val_visualizations" / f"epoch_{epoch + 1}"
-                self.validator.save_dir = epoch_vis_dir
-                self.validator.save_visualizations(num_samples=4)
-                print(f"Visualizations saved to: {epoch_vis_dir}")
+                try:
+                    epoch_vis_dir = self.checkpoint_dir / "val_visualizations" / f"epoch_{epoch + 1}"
+                    self.validator.save_dir = epoch_vis_dir
+                    self.validator.save_visualizations(num_samples=4)
+                    print(f"Visualizations saved to: {epoch_vis_dir}")
+                except Exception as e:
+                    print(f"Notice: Skipped visualization export for epoch {epoch + 1} ({e})")
 
             return val_loss, metrics
 
