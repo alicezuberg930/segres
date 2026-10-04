@@ -98,7 +98,7 @@ def parse_args(raw_args: Optional[List[str]] = None):
         "--model",
         type=str,
         default="soar",
-        help="Model architecture: 'soar', 'unet', 'dlinknet', 'csnet', 'bisenetv2', 'ddrnet', 'pidnet', 'segformer', or path to YAML config",
+        help="Model architecture: 'soar', 'soar-trm', 'unet', 'dlinknet', 'csnet', 'bisenetv2', 'ddrnet', 'pidnet', 'segformer', or path to YAML config",
     )
     train_parser.add_argument("--data", type=str, required=True, help="Dataset root directory or COCO dataset folder")
     train_parser.add_argument("--cfg", type=str, default="configs/default.yaml", help="Default configuration YAML")
