@@ -10,4 +10,5 @@ __all__ = [
     "DatasetConfig",
     "BaseAugmentation",
     "BasePreprocessor",
+    "preload_dataset_cache",
 ]

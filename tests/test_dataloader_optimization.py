@@ -202,6 +202,82 @@ def test_multiclass_segmentation():
         assert len(metrics["class_ious"]) == 4
 
 
+def test_in_memory_ram_caching():
+    """Verify full in-memory RAM caching with preloading, augmentation independence, and Subset handling."""
+    from soar.data.dataset import preload_dataset_cache, collate_fn
+    from torch.utils.data import DataLoader, Subset
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        train_dir = tmp_path / "train" / "train_images"
+        labels_dir = tmp_path / "train" / "labels"
+        train_dir.mkdir(parents=True, exist_ok=True)
+        labels_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create 3 synthetic images and polygon labels
+        for i in range(3):
+            img = np.random.randint(0, 256, (512, 512, 3), dtype=np.uint8)
+            cv2.imwrite(str(train_dir / f"img{i}.png"), img)
+            with open(labels_dir / f"img{i}.txt", "w") as f:
+                f.write(f"0 0.1 0.1 0.4 0.1 0.4 0.4 0.1 0.4\n")
+
+        # 1. Test Eager Preloading & RAM Estimation
+        ds_eager = SegmentationDataset(
+            data_root=tmp_path,
+            split="train",
+            img_size=(512, 512),
+            in_channels=3,
+            num_classes=1,
+            augment=True,
+            cache_ram=True,
+        )
+        assert len(ds_eager._cache_store) == 0
+        est_gb = ds_eager.estimate_ram_usage()
+        assert est_gb > 0.0, f"Expected positive RAM estimate, got {est_gb}"
+
+        ds_eager.preload_cache(verbose=True)
+        assert len(ds_eager._cache_store) == 3, f"Expected 3 preloaded samples, got {len(ds_eager._cache_store)}"
+
+        # 2. Test Augmentation Integrity (cached reference must remain pristine)
+        cached_img_ref = ds_eager._cache_store[str(ds_eager.image_files[0])][0].copy()
+        s1 = ds_eager[0]
+        s2 = ds_eager[0]
+        # Pristine cached array must be completely unaltered
+        current_cached_img = ds_eager._cache_store[str(ds_eager.image_files[0])][0]
+        assert np.array_equal(cached_img_ref, current_cached_img), "Augmentation mutated cached in-memory reference!"
+
+        # 3. Test Lazy Caching Fallback
+        ds_lazy = SegmentationDataset(
+            data_root=tmp_path,
+            split="train",
+            img_size=(512, 512),
+            in_channels=3,
+            num_classes=1,
+            augment=False,
+            cache_ram=True,
+        )
+        assert len(ds_lazy._cache_store) == 0
+        _ = ds_lazy[0]
+        assert len(ds_lazy._cache_store) == 1
+        _ = ds_lazy[1]
+        assert len(ds_lazy._cache_store) == 2
+
+        # 4. Test preload_dataset_cache with Subset
+        subset = Subset(ds_lazy, [0, 1])
+        preload_dataset_cache(subset, verbose=True)
+        assert len(ds_lazy._cache_store) == 3  # All images preloaded via underlying dataset
+
+        # 5. Multi-epoch DataLoader verification
+        loader = DataLoader(ds_eager, batch_size=1, collate_fn=collate_fn)
+        for epoch in range(2):
+            batch_count = 0
+            for batch in loader:
+                assert "image" in batch and batch["image"].shape == (1, 3, 512, 512)
+                assert "mask" in batch and batch["mask"].shape == (1, 1, 512, 512)
+                batch_count += 1
+            assert batch_count == 3
+
+
 if __name__ == "__main__":
     print("Running test_offline_rasterization_and_dataset_loading...")
     test_offline_rasterization_and_dataset_loading()
@@ -213,6 +289,9 @@ if __name__ == "__main__":
     test_dataset_with_augmentations()
     print("Running test_multiclass_segmentation...")
     test_multiclass_segmentation()
-    print("All Phase 1 optimization and multi-class tests passed successfully!")
+    print("Running test_in_memory_ram_caching...")
+    test_in_memory_ram_caching()
+    print("All Phase 1 optimization, multi-class, and in-memory RAM caching tests passed successfully!")
+
 
 

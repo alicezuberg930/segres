@@ -105,7 +105,7 @@ def create_synthetic_dataset(root: Path) -> Path:
 
 def test_benchmark_training_and_inference():
     """Verify BenchmarkTrainer and BenchmarkPredictor execute on synthetic data."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         root = Path(tmp)
         yaml_path = create_synthetic_dataset(root)
 

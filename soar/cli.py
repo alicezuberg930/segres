@@ -123,6 +123,7 @@ def parse_args(raw_args: Optional[List[str]] = None):
     train_parser.add_argument("--samples", type=int, default=None, help="Subsample dataset to first N samples for quick testing")
     train_parser.add_argument("--preprocess-mode", type=str, default="standard", choices=["minimal", "standard", "native"], help="Preprocessing mode")
     train_parser.add_argument("--loss", type=str, default="soar", choices=["soar", "standard"], help="Loss function: 'soar' (composite) or 'standard' (BCE+Dice)")
+    train_parser.add_argument("--cache-ram", action="store_true", default=False, help="Enable full in-memory RAM caching for zero-latency training (bypasses disk reads and rasterization)")
 
     # -------------------------------------------------------------
     # Validate command
@@ -137,6 +138,7 @@ def parse_args(raw_args: Optional[List[str]] = None):
     val_parser.add_argument("--save-dir", type=str, default=None, help="Directory to save validation visualizations")
     val_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
     val_parser.add_argument("--num-classes", type=int, default=None, help="Number of classes (auto-inferred from checkpoint or dataset)")
+    val_parser.add_argument("--cache-ram", action="store_true", default=False, help="Enable in-memory RAM caching for validation dataset")
 
     # -------------------------------------------------------------
     # Predict command
@@ -190,6 +192,7 @@ def train(args):
     print(f"  - Device:        {args.device}")
     print(f"  - Mixed Prec.:   {args.amp}")
     print(f"  - Loss Type:     {args.loss}")
+    print(f"  - RAM Caching:   {getattr(args, 'cache_ram', False)}")
     print("=" * 70)
 
     # Build preprocessing config
@@ -227,6 +230,7 @@ def train(args):
         annotation_file=args.annotation_file,
         augment=(not args.no_augment),
         samples=args.samples,
+        cache_ram=getattr(args, "cache_ram", False),
     )
 
     trainer.train()
@@ -258,6 +262,7 @@ def validate(args):
         num_workers=args.workers,
         save_dir=args.save_dir,
         num_classes=num_classes,
+        cache_ram=getattr(args, "cache_ram", False),
     )
 
     validator.setup_data(split="val")

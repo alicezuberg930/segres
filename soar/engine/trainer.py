@@ -63,7 +63,9 @@ class BaseTrainer:
         loss_cfg: Optional[Dict[str, Any]] = None,
         augment: bool = True,
         samples: Optional[int] = None,
+        cache_ram: bool = False,
     ):
+
         self.model_cfg = model_cfg
         self.loss_cfg = loss_cfg
         self.dataset_cfg = DatasetConfig.resolve(data_root)
@@ -123,6 +125,7 @@ class BaseTrainer:
         self.sampler_mode = sampler_mode
         self.augment = augment
         self.samples = samples
+        self.cache_ram = bool(cache_ram)
 
         # Distributed training setup
         self.use_ddp = "RANK" in os.environ and "WORLD_SIZE" in os.environ
@@ -246,6 +249,7 @@ class BaseTrainer:
             image_dir=train_image_dir,
             image_files=train_image_files,
             samples=self.samples,
+            cache_ram=self.cache_ram,
         )
 
         if hasattr(train_dataset, "class_names") and train_dataset.class_names:
@@ -270,6 +274,7 @@ class BaseTrainer:
                 image_dir=val_image_dir,
                 image_files=val_image_files,
                 samples=self.samples,
+                cache_ram=self.cache_ram,
             )
             if len(val_dataset) > 0 and set(val_dataset.image_files) != set(train_dataset.image_files):
                 has_val = True
@@ -298,6 +303,12 @@ class BaseTrainer:
 
                 train_ds = Subset(train_dataset, train_indices)
                 val_ds = Subset(train_dataset, val_indices)
+
+        if self.cache_ram:
+            from ..data.dataset import preload_dataset_cache
+            preload_dataset_cache(train_dataset, verbose=(self.rank == 0))
+            if has_val and val_dataset is not None:
+                preload_dataset_cache(val_dataset, verbose=(self.rank == 0))
 
         if self.use_ddp:
             train_sampler = DistributedSampler(train_ds, num_replicas=self.world_size, rank=self.rank, shuffle=True)

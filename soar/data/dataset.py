@@ -58,6 +58,7 @@ class SegmentationDataset(Dataset):
         in_channels: int = 3,
         num_classes: int = 1,
         samples: Optional[int] = None,
+        cache_ram: bool = False,
     ) -> None:
         super().__init__()
         self.data_root = Path(data_root)
@@ -74,8 +75,9 @@ class SegmentationDataset(Dataset):
         self.samples = samples
         self.coco_cat_map: Dict[int, int] = {}
         self.augment = augment and self.is_train
-        self.use_cache = use_cache
-        self.cache_limit = max(0, cache_limit)
+        self.cache_ram = bool(cache_ram)
+        self.use_cache = use_cache or self.cache_ram
+        self.cache_limit = 1000000000 if self.cache_ram else max(0, cache_limit)
         self.transform = transform
         self.auto = auto
 
@@ -126,6 +128,69 @@ class SegmentationDataset(Dataset):
 
         # In-memory processing cache
         self._cache_store: Dict[str, Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], Optional[Dict]]] = {}
+
+    def estimate_ram_usage(self) -> float:
+        """Estimate RAM required (in gigabytes) to cache the dataset in memory."""
+        h, w = self.img_size
+        bytes_per_sample = (self.in_channels + self.num_classes + 1) * h * w * 4
+        total_bytes = bytes_per_sample * len(self.image_files)
+        return total_bytes / (1024 ** 3)
+
+    def preload_cache(self, verbose: bool = True) -> None:
+        """Eagerly load and preprocess all dataset samples into in-memory RAM cache."""
+        if not self.cache_ram and not self.use_cache:
+            return
+
+        n_samples = len(self.image_files)
+        if n_samples == 0:
+            return
+
+        est_gb = self.estimate_ram_usage()
+
+        try:
+            import psutil
+            mem_info = psutil.virtual_memory()
+            avail_gb = mem_info.available / (1024 ** 3)
+            used_before_gb = mem_info.used / (1024 ** 3)
+            has_psutil = True
+            if est_gb > avail_gb * 0.9:
+                import warnings
+                warnings.warn(
+                    f"[Cache-RAM Safeguard] Estimated RAM usage ({est_gb:.2f} GB) exceeds 90% of available memory "
+                    f"({avail_gb:.2f} GB). Consider reducing resolution, sample count, or disabling cache_ram.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        except ImportError:
+            has_psutil = False
+            used_before_gb = 0.0
+            avail_gb = 0.0
+
+        if verbose:
+            if has_psutil:
+                print(f"[Cache-RAM] Preloading {n_samples} samples ({self.split} split)...")
+                print(f"[Cache-RAM] Est. Size: {est_gb:.2f} GB | Avail RAM: {avail_gb:.2f} GB | Used RAM: {used_before_gb:.2f} GB")
+            else:
+                print(f"[Cache-RAM] Preloading {n_samples} samples ({self.split} split) | Est. Size: {est_gb:.2f} GB...")
+
+        iterator = self.image_files
+        if verbose:
+            from tqdm import tqdm
+            iterator = tqdm(iterator, desc=f"Caching RAM ({self.split})", total=n_samples, unit="img")
+
+        for path in iterator:
+            self._get_processed_data(path)
+
+        if verbose:
+            if has_psutil:
+                import psutil
+                mem_after = psutil.virtual_memory()
+                used_after_gb = mem_after.used / (1024 ** 3)
+                diff_gb = max(0.0, used_after_gb - used_before_gb)
+                print(f"[Cache-RAM] Successfully cached {len(self._cache_store)}/{n_samples} samples | "
+                      f"RAM Used: {used_after_gb:.2f} GB (+{diff_gb:.2f} GB)")
+            else:
+                print(f"[Cache-RAM] Successfully cached {len(self._cache_store)}/{n_samples} samples.")
 
     def _resolve_image_dir(self) -> Path:
         """Locate root directory containing image targets."""
@@ -666,7 +731,7 @@ class SegmentationDataset(Dataset):
             mask = np.ascontiguousarray(mask)
 
         res = (processed_img, mask, valid_mask, meta)
-        if len(self._cache_store) < self.cache_limit:
+        if self.cache_ram or len(self._cache_store) < self.cache_limit:
             self._cache_store[key] = res
 
         return res
@@ -680,7 +745,7 @@ class SegmentationDataset(Dataset):
 
         # Handle ground truth masks for train/val splits
         if self.has_gt:
-            # Clone cached references when augmenting to prevent cache corruption
+            # Clone cached references to prevent cache corruption
             if self.augment:
                 img_np = img.copy()
                 mask_np = mask.copy() if mask is not None else None
@@ -703,6 +768,10 @@ class SegmentationDataset(Dataset):
                 if self.num_classes == 1:
                     mask = mask.squeeze(-1)
                 valid_mask = valid_mask.squeeze(-1)
+            else:
+                img = img.copy()
+                mask = mask.copy() if mask is not None else None
+                valid_mask = valid_mask.copy() if valid_mask is not None else None
 
             img = np.ascontiguousarray(img)
             mask = np.ascontiguousarray(mask) if mask is not None else None
@@ -901,3 +970,12 @@ def build_balanced_sampler(
     weights[pos_indices] = w_pos
     weights[neg_indices] = w_neg
     return WeightedRandomSampler(weights=weights, num_samples=len(indices), replacement=True)
+
+
+def preload_dataset_cache(dataset: Any, verbose: bool = True) -> None:
+    """Preload in-memory cache for SegmentationDataset, Subset, or wrapped datasets."""
+    ds = dataset
+    while hasattr(ds, "dataset"):
+        ds = ds.dataset
+    if hasattr(ds, "preload_cache") and getattr(ds, "cache_ram", False):
+        ds.preload_cache(verbose=verbose)

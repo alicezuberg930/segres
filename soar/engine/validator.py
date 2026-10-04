@@ -41,6 +41,7 @@ class BaseValidator:
         dataloader: Optional[DataLoader] = None,
         num_classes: int = 1,
         class_names: Optional[Dict[int, str]] = None,
+        cache_ram: bool = False,
     ):
         self.model = model
         self.data_root = Path(data_root)
@@ -52,6 +53,7 @@ class BaseValidator:
         self.save_dir = Path(save_dir) if save_dir else None
         self._dataloader = dataloader
         self.class_names = class_names or {}
+        self.cache_ram = bool(cache_ram)
         if not self.class_names and dataloader is not None:
             ds = getattr(dataloader, "dataset", None)
             while hasattr(ds, "dataset"):
@@ -88,7 +90,6 @@ class BaseValidator:
     @val_loader.setter
     def val_loader(self, loader: Optional[DataLoader]):
         self.dataloader = loader
-        self.dataloader = loader
 
     def setup_data(self, split: str = "val"):
         """Setup validation data loader if not externally provided."""
@@ -100,7 +101,11 @@ class BaseValidator:
             augment=False,
             use_cache=True,
             auto=True,
+            cache_ram=self.cache_ram,
         )
+
+        if self.cache_ram:
+            self.dataset.preload_cache(verbose=True)
 
         self.dataloader = DataLoader(
             self.dataset,
@@ -110,6 +115,7 @@ class BaseValidator:
             pin_memory=(self.device.type == "cuda"),
             collate_fn=collate_fn,
             drop_last=False,
+            persistent_workers=(self.num_workers > 0),
         )
 
     @staticmethod
