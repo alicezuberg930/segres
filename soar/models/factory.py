@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 
 from .model import SegmentationModel
+from .soar_trm import SOARTinyRecursiveModel
 from benchmarks import (
     UNet,
     DLinkNet,
@@ -36,7 +37,17 @@ SOAR_PRESETS: Dict[str, str] = {
 
 def list_models() -> List[str]:
     """Return all recognized model names across SOAR and benchmark baselines."""
-    return ["soar", "soar_nano", "soar_small", "soar_medium", "soar_large", "soar_xlarge"] + list_benchmark_models()
+    return [
+        "soar",
+        "soar_trm",
+        "soar_micro",
+        "soar_nano",
+        "soar_small",
+        "soar_medium",
+        "soar_large",
+        "soar_xlarge",
+    ] + list_benchmark_models()
+
 
 
 def _resolve_yaml_path(path_str: str) -> Optional[Path]:
@@ -95,7 +106,21 @@ def build_model(
                 print(f"[{cls.__name__}] Initialized with in_channels={in_channels}, num_classes={num_classes} ({params_m:.2f}M params)")
             return net
 
-    # 2. Check SOAR presets
+    # 2. Check SOAR-TRM (Micro Recursive Model)
+    if norm_key in ("soartrm", "trm", "soarmicro", "micro"):
+        net = SOARTinyRecursiveModel(
+            in_channels=in_channels,
+            num_classes=num_classes,
+            hidden_channels=kwargs.get("hidden_channels", 32),
+            num_steps=kwargs.get("num_steps", 3),
+            use_checkpointing=kwargs.get("use_checkpointing", True),
+        )
+        if verbose:
+            params_k = net.num_parameters / 1e3
+            print(f"[SOAR-TRM] Initialized Micro Recursive Model with in_channels={in_channels}, num_classes={num_classes} ({params_k:.1f}k params)")
+        return net
+
+    # 3. Check SOAR presets
     for preset_name, rel_path in SOAR_PRESETS.items():
         if norm_key == preset_name:
             resolved = _resolve_yaml_path(rel_path)
