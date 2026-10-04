@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 
 from .model import SegmentationModel
-from .soar_trm import SOARTinyRecursiveModel
 from benchmarks import (
     UNet,
     DLinkNet,
@@ -22,11 +21,6 @@ from benchmarks import (
 
 SOAR_PRESETS: Dict[str, str] = {
     "soar": "configs/models/soar_medium1.yaml",
-    "soarmicro": "configs/models/soar_micro1.yaml",
-    "soarmicro1": "configs/models/soar_micro1.yaml",
-    "soartrm": "configs/models/soar_micro1.yaml",
-    "trm": "configs/models/soar_micro1.yaml",
-    "micro": "configs/models/soar_micro1.yaml",
     "soarnano": "configs/models/soar_nano1.yaml",
     "soarnano1": "configs/models/soar_nano1.yaml",
     "soarsmall": "configs/models/soar_small1.yaml",
@@ -44,9 +38,6 @@ def list_models() -> List[str]:
     """Return all recognized model names across SOAR and benchmark baselines."""
     return [
         "soar",
-        "soar_trm",
-        "soar_micro",
-        "soar_micro1",
         "soar_nano",
         "soar_small",
         "soar_medium",
@@ -86,7 +77,7 @@ def build_model(
 
     Args:
         model: Model name ('unet', 'dlinknet', 'csnet', 'bisenetv2', 'ddrnet', 'pidnet',
-               'segformer', 'soar', 'soar-trm', 'soar_micro1'), YAML config file path, or nn.Module instance.
+               'segformer', 'soar'), YAML config file path, or nn.Module instance.
         in_channels: Number of input image channels (default: 3).
         num_classes: Number of target segmentation classes (default: 1).
         verbose: Whether to log model creation and parameter counts.
@@ -112,7 +103,7 @@ def build_model(
                 print(f"[{cls.__name__}] Initialized with in_channels={in_channels}, num_classes={num_classes} ({params_m:.2f}M params)")
             return net
 
-    # 2. Check SOAR presets (including soar-trm, soar_micro1, etc.)
+    # 2. Check SOAR presets (soar_nano1, soar_small1, etc.)
     for preset_name, rel_path in SOAR_PRESETS.items():
         if norm_key == preset_name:
             resolved = _resolve_yaml_path(rel_path)

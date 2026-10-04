@@ -25,7 +25,7 @@
 \title{SOAR: Sub-Pixel Oriented Aggregation and Resolution-Preserving Neural Architecture for Topology-Critical Real-Time Dense Vision}
 
 \author{SOAR Research Consortium%
-\thanks{Manuscript received October 2, 2026; revised October 4, 2026. This research focuses on real-time neural architectures, ultra-lightweight recursive equilibrium models, edge memory bandwidth optimization, topology-preserving loss dynamics, and one-stage supervised training for high-resolution dense vision manifolds.}}
+\thanks{Manuscript received October 2, 2026; revised October 4, 2026. This research focuses on real-time neural architectures, edge memory bandwidth optimization, topology-preserving loss dynamics, and one-stage supervised training for high-resolution dense vision manifolds.}}
 
 \markboth{IEEE Transactions on Pattern Analysis and Machine Intelligence,~Vol.~XX, No.~X, October~2026}%
 {SOAR Research Consortium: Sub-Pixel Oriented Aggregation and Resolution-Preserving Architecture}
@@ -35,15 +35,13 @@
 \begin{abstract}
 Real-time semantic segmentation architectures (e.g., PIDNet, DDRNet, BiSeNet) achieve exceptional Pareto efficiency in coarse urban scene parsing. Concurrently, foundation models and boundary specialists (e.g., HQ-SAM, Mask2Former, PointRend, CascadePSP, ISDNet) achieve remarkable mask fidelity but demand hundreds of millions of parameters, quadratic self-attention memory overhead, and severe computational latency. When deployed for geometry- and topology-critical dense prediction on high-resolution manifolds ($1024\times 1024$ to $4096\times 4096$)---such as semiconductor photolithography defect inspection, biomedical micro-angiography, carbon-fiber filament segmentation, and infrastructure crack tracing---both paradigms encounter fundamental structural bottlenecks. Conventional downsamplers down to stride $s32$, coupled with bilinear upsampling or coarse prototype masks at stride $s4$, act as destructive spatial low-pass filters that sever continuous, 1-pixel-wide curvilinear manifolds. Conversely, specialized curvilinear models (e.g., CS-Net, D-LinkNet, U-Net) suffer from quadratic Memory Access Cost (MAC) and collapse to $<10$~FPS on embedded accelerators, while foundation models exceed GPU memory budgets under native micro-batch ($B=1$) training.
 
-To resolve this foundational trilemma between boundary fidelity, parameter footprint, and deterministic edge latency, this paper presents \textbf{SOAR (Sub-Pixel Oriented Aggregation and Resolution-Preserving Network)}. SOAR establishes a unified resolution-preserving framework comprising two complementary design tiers:
-(1) \textbf{The SOAR1 Baseline Family (Nano to XLarge, 0.85M--21.85M params):} Incorporating a zero-aliasing 2D Haar Wavelet Stem (\texttt{WaveStem}) preserving sub-pixel high-frequency edge gradients at stride $s2$; Large-Kernel Residual (LKR) depthwise blocks with zero-initialized Group Normalization ($\gamma \leftarrow 0$) ensuring numerical stability down to $B=1$; a global frequency-domain spectral context module (\texttt{SpectralCtx}) capturing an infinite receptive field in strictly $\mathcal{O}(HW \log HW)$ complexity; a memory-efficient Gated Convex Cross-Resolution Fusion (\texttt{Fuse}) and Multi-Scale Aggregation (\texttt{Agg}) neck; and a sub-pixel periodic shuffling head (\texttt{SegHead}, $s2 \to s1$) eliminating bilinear interpolation blur.
-(2) \textbf{SOAR1-Micro / SOAR-TRM ($\sim$0.034M params):} An ultra-compact recursive architecture inspired by Tiny Recursive Models (TRM). By executing parameter-free 2D Haar Wavelet decomposition into 4 sub-bands and coupling a single weight-shared recurrent cell with PyTorch gradient checkpointing, SOAR-Micro maintains strictly $\mathcal{O}(1)$ activation memory across $T$ recurrent iterations, achieves a 100\% canvas effective receptive field via Feature-wise Linear Modulation (FiLM) global context, and optimizes unbounded logit residuals with decoupled DC/HF heads.
+To resolve this foundational trilemma between boundary fidelity, parameter footprint, and deterministic edge latency, this paper presents \textbf{SOAR (Sub-Pixel Oriented Aggregation and Resolution-Preserving Network)}. SOAR establishes a unified resolution-preserving framework (spanning Nano to XLarge, 0.85M--21.85M params) incorporating: (i) an ultra-lightweight, zero-aliasing Wavelet Stem (\texttt{WaveStem}) utilizing 2D Haar discrete wavelet decomposition to preserve sub-pixel high-frequency edge gradients at stride $s2$ while slashing stem memory access cost by $>70\%$; (ii) a wide-receptive-field backbone driven by Large-Kernel Residual (LKR) depthwise blocks with zero-initialized Group Normalization ($\gamma \leftarrow 0$), guaranteeing numerical stability under $B=1$ micro-batches; (iii) a global frequency-domain spectral context module (\texttt{SpectralCtx}) at stride $s32$ capturing an infinite receptive field across the entire multi-megapixel canvas with strictly $\mathcal{O}(HW \log HW)$ complexity; (iv) a memory-efficient Gated Convex Cross-Resolution Fusion (\texttt{Fuse}) and Multi-Scale Aggregation (\texttt{Agg}) neck that adaptively balances deep contextual semantics with fine spatial skip pathways; (v) a sub-pixel periodic shuffling head (\texttt{SegHead}) performing direct $s2 \to s1$ super-resolution logit reconstruction to eliminate bilinear interpolation blur; and (vi) an equilibrated high-resolution tri-domain curriculum loss equilibrating Focal modulation, scale-invariant soft Dice, grouped Sobel boundary metrics, and warmup-scheduled continuous skeletonization ($\mathcal{L}_{\text{clDice}}$) to extinguish background gradient swamping.
 
-Both tiers are supervised via an equilibrated tri-domain curriculum loss (Focal modulation, Soft Dice, grouped Sobel boundary metrics, and continuous skeletonization $\mathcal{L}_{\text{clDice}}$). This paper provides the formal blueprint and comprehensive benchmarking protocol comparing SOAR across five premier baseline suites spanning 2020--2026 state-of-the-art: (i) Curvilinear/Topology specialists (U-Net, D-LinkNet, CS-Net); (ii) Real-time dual-resolution networks (BiSeNet V2, STDC, DDRNet, PIDNet); (iii) High-resolution boundary refinement models (PointRend, CascadePSP, ISDNet); (iv) Modern Vision Transformers and universal mask segmenters (SegFormer, SegNeXt, Mask2Former, EfficientSAM); and (v) The SOAR family across resolutions up to native $2048\times 2048$.
+This paper provides the formal blueprint and comprehensive benchmarking protocol comparing SOAR across four premier baseline suites spanning 2020--2026 state-of-the-art: (i) Curvilinear/Topology specialists (U-Net, D-LinkNet, CS-Net); (ii) Real-time dual-resolution networks (BiSeNet V2, STDC, DDRNet, PIDNet); (iii) High-resolution boundary refinement models (PointRend, CascadePSP, ISDNet); and (iv) Modern Vision Transformers and universal mask segmenters (SegFormer, SegNeXt, Mask2Former, EfficientSAM) across resolutions up to native $2048\times 2048$.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Real-Time Semantic Segmentation, Curvilinear Structure Extraction, Tiny Recursive Models, Edge Computing, Topology Preservation, High-Resolution Vision, Wavelet Transforms, Gradient Checkpointing.
+Real-Time Semantic Segmentation, Curvilinear Structure Extraction, Edge Computing, Topology Preservation, High-Resolution Vision, Dual-Resolution Networks, Wavelet Transforms.
 \end{IEEEkeywords}
 
 \section{Introduction}
@@ -165,15 +163,17 @@ Despite dramatic independent progress, deploying deep neural networks to high-re
 \label{fig:architecture}
 \end{figure*}
 
-To overcome these foundational limits, this paper introduces \textbf{SOAR (Sub-Pixel Oriented Aggregation and Resolution-Preserving Network)}. SOAR delivers a unified framework spanning from extreme edge micro-models (SOAR1-Micro, $\approx 34\text{k}$ parameters) to high-capacity high-resolution representations (SOAR1-XLarge, 21.85M parameters).
+To overcome these foundational limits, this paper introduces \textbf{SOAR (Sub-Pixel Oriented Aggregation and Resolution-Preserving Network)}. SOAR establishes a unified resolution-preserving framework spanning from compact edge deployments (SOAR1-Nano, 0.85M parameters) to high-capacity high-resolution representations (SOAR1-XLarge, 21.85M parameters).
 
 \subsection{Scientific Contributions}
 The principal contributions of this work are summarized as follows:
 \begin{itemize}
-    \item \textbf{Resolution-Preserving Dual-Tier Architecture:} We propose two mutually reinforcing architectures: (1) \textbf{SOAR1 Baselines (Nano to XLarge)}, delivering real-time streaming throughput via 2D Haar Wavelet stems, Large-Kernel Residual depthwise blocks, 2D FFT spectral context, gated convex fusion, and direct sub-pixel periodic shuffling; and (2) \textbf{SOAR1-Micro / SOAR-TRM}, an ultra-compact recursive model ($\approx 33{,}705$ parameters for binary segmentation) using parameter-free Haar DWT/IDWT and a single shared recurrent cell.
-    \item \textbf{Constant Memory BPTT via Gradient Checkpointing:} In SOAR1-Micro, we integrate non-reentrant gradient checkpointing across recurrent time steps $T$, guaranteeing strictly $\mathcal{O}(1)$ activation memory with respect to recurrent depth $T$ and enabling full-resolution $2048\times 2048$ training on consumer GPUs.
-    \item \textbf{Global Receptive Field Mechanisms:} We equip SOAR with two distinct global context operators: 2D FFT spectral context (\texttt{SpectralCtx}) in the baseline tier and Feature-wise Linear Modulation (FiLM) in the micro tier, guaranteeing 100\% canvas effective receptive field coverage from iteration $t=1$.
-    \item \textbf{Unbounded Logits \& Decoupled Sub-Band Synthesis:} We formulate recursive mask refinement in unbounded logit space $\mathbb{R}$ (eliminating sigmoid saturation traps) and decouple DC ($LL$) from high-frequency ($LH, HL, HH$) prediction heads with high-frequency dampening to eliminate ripple artifacts.
+    \item \textbf{Resolution-Preserving Baseline Family:} We engineer an end-to-end convolutional family (Nano to XLarge, 0.85M--21.85M parameters) delivering real-time streaming throughput via 2D Haar Wavelet stems, Large-Kernel Residual depthwise blocks, 2D FFT spectral context, gated convex fusion, and direct sub-pixel periodic shuffling.
+    \item \textbf{Zero-Aliasing Wavelet Stem (\texttt{WaveStem}):} We replace destructive strided pooling with 2D Haar Discrete Wavelet Transform decomposition at stride $s2$, splitting images into approximation ($LL$) and high-frequency edge bands ($LH, HL, HH$), eliminating spatial aliasing and slashing stem MAC by $>70\%$.
+    \item \textbf{Large-Kernel Residual (LKR) Backbone with Group Normalization:} We engineer a lightweight backbone incorporating depthwise $7\times 7$ convolutions with zero-initialized Group Normalization projections ($\gamma \leftarrow 0$), guaranteeing expansive Effective Receptive Fields (ERF) and numerical stability down to $B=1$ micro-batches.
+    \item \textbf{Global Frequency-Domain Spectral Context (\texttt{SpectralCtx}):} At the deepest feature stage ($s32$), we integrate 2D Real FFT spectral modulation, providing an infinite theoretical receptive field spanning the entire multi-megapixel canvas in strictly $\mathcal{O}(HW \log HW)$ complexity.
+    \item \textbf{Gated Convex Cross-Resolution Fusion (\texttt{Fuse}) and Multi-Scale Aggregation (\texttt{Agg}):} We introduce an adaptive fusion mechanism calculating dynamic spatial combination fields $G \in [0, 1]$, smoothly interpolating between fine stride $s2$ detail and deep $s32$ contextual features without heuristic addition or channel concatenation bloat.
+    \item \textbf{Direct Sub-Pixel Logit Head (\texttt{SegHead}):} We synthesize native-resolution dense logit maps through sub-pixel periodic shuffling ($s2 \to s1$), completely eliminating bilinear prototype blurring while incorporating focal prior bias initialization ($\pi = 0.01$) to suppress background saturation from the first training iteration.
     \item \textbf{Tri-Domain High-Resolution Loss Equilibration:} We derive a mathematically balanced composite loss integrating Focal modulation, Soft Dice, grouped Sobel boundary distance, and warmup-scheduled continuous skeletonization ($\mathcal{L}_{\text{clDice}}$), extinguishing the $100\times$ gradient magnitude mismatch between pixel and regional objectives.
     \item \textbf{Blueprint Benchmarking Across SOTA Paradigms (2020--2026):} We establish an extensive peer-reviewed evaluation framework comparing SOAR against all leading high-resolution segmentation paradigms across multiple multi-megapixel manifolds ($1024^2$ and $2048^2$), including real-time dual-resolution segmenters (PIDNet, DDRNet, BiSeNet V2, STDC), high-resolution boundary specialists (PointRend, CascadePSP, ISDNet), modern transformers (SegFormer, SegNeXt, Mask2Former, EfficientSAM), and curvilinear models (U-Net, CS-Net, D-LinkNet).
 \end{itemize}
@@ -198,13 +198,10 @@ The advent of universal mask transformers (Mask2Former \cite{cheng2022masked}, O
 In scientific, medical, and industrial vision, extracting thin elongated manifolds demands strict topological continuity. U-Net \cite{ronneberger2015u} established the foundational encoder-decoder paradigm with skip connections. D-LinkNet \cite{zhou2018dlinknet} incorporated central dilated convolution blocks to expand receptive fields for high-resolution road extraction. CS-Net \cite{mou2019csnet} introduced 1D spatial and channel attention modules tailored for thin curvilinear structures. 
 Concurrently, Shit \emph{et al.} introduced clDice \cite{shit2021cldice}, extracting differentiable skeletons via directional morphological pooling to evaluate topological intersection over union along centerlines. Cheng \emph{et al.} introduced Boundary IoU \cite{cheng2021boundary} to evaluate contour fidelity within targeted distance bands. SOAR unifies these topological metrics into a high-throughput framework with deterministic edge latency.
 
-\subsection{Tiny Recursive & Equilibrium Models}
-Recently, Samsung SAIL Montreal introduced the Tiny Recursive Model (TRM) \cite{jolicoeur2025trm}, demonstrating that an ultra-compact recursive core with shared weights can solve complex reasoning tasks (such as ARC-AGI) with $<0.15\text{M}$ parameters by iteratively refining latent states over $T$ steps. Related Deep Equilibrium Models (DEQ) \cite{bai2019deep} solve for fixed-point latent representations via implicit differentiation. In SOAR, we adapt recursive reasoning to high-resolution computer vision: coupling parameter-free 2D Haar Wavelet decomposition with gradient checkpointing, global FiLM modulation, and unbounded logit synthesis, creating a 34k-parameter micro model capable of native $2048\times 2048$ dense prediction.
-
 \section{Proposed Methodology}
 
-\subsection{Architectural Blueprint: SOAR1 Baseline Family}
-The complete architectural layout of the SOAR1 baseline family is depicted in Fig.~\ref{fig:architecture}. The model is organized into four cooperative modules:
+\subsection{Architectural Blueprint}
+The complete architectural layout of the SOAR baseline family is depicted in Fig.~\ref{fig:architecture}. The model is organized into four cooperative modules:
 1) \textbf{Wavelet Stem (\texttt{WaveStem}) and Detail Highway:} Decomposes the image via 2D Haar Wavelet transform into 4 sub-bands at stride $s2$ ($H/2 \times W/2$), preserving all high-frequency sub-pixel edge gradients with zero spatial aliasing;
 2) \textbf{Large-Kernel Residual Backbone ($s2 \to s32$):} Hierarchically downsamples features across stages $P_2, P_3, P_4, P_5$ while expanding receptive fields via depthwise $k=5$ and $k=7$ kernels, augmented by global spectral context (\texttt{SpectralCtx}) at $s32$;
 3) \textbf{Gated Convex Fusion Neck:} Adaptively fuses deep semantic contexts into high-resolution spatial features via memory-efficient spatial gating fields;
@@ -285,65 +282,6 @@ b_{\text{init}} = -\ln\left(\frac{1 - \pi}{\pi}\right), \quad \pi = 0.01
 \end{equation}
 enforcing that initial predicted probabilities $p = \sigma(b_{\text{init}}) \approx 0.01$, immediately matching true background distributions.
 
-\subsection{Micro Recursive Architecture: SOAR-TRM}
-To establish an extreme lower bound on parameter footprint for embedded and IoT environments, we formulate \textbf{SOAR1-Micro (SOAR-TRM)}, shown in Fig.~\ref{fig:trm_arch}.
-Inspired by Samsung SAIL Montreal's TRM \cite{jolicoeur2025trm}, SOAR1-Micro replaces deep hierarchical feedforward layers with a single weight-shared recursive core executed over $T$ iterations ($T_{\text{train}}=3$, $T_{\text{infer}}=2\dots 5$).
-
-\begin{figure}[!t]
-\centering
-\begin{tikzpicture}[
-    >=Stealth,
-    font=\tiny,
-    box/.style={rectangle, draw=black!70, fill=gray!10, rounded corners=2pt, text centered, minimum height=0.65cm, inner sep=2pt},
-    trm_box/.style={rectangle, draw=purple!80!black, fill=purple!8, rounded corners=3pt, text centered, minimum height=0.9cm, text width=2.5cm, line width=0.8pt},
-    arr/.style={draw=black!80, -Stealth, line width=0.8pt}
-]
-    \node [box] (x) at (0, 0) {$\mathbf{X} \in \mathbb{R}^{B \times 3 \times H \times W}$};
-    \node [box, right=0.4cm of x] (dwt) {Haar DWT ($s2$)\\$[LL, LH, HL, HH]$};
-    \node [box, right=0.4cm of dwt] (stem) {Stem Conv\\$E_x \in \mathbb{R}^{B \times 32 \times \frac{H}{2} \times \frac{W}{2}}$};
-    \node [trm_box, below=0.8cm of stem] (cell) {\textbf{TRM Recursive Cell}\\$(H_t, Z_t, E_x) \to (H_{t+1}, Z_{t+1})$\\$\times T$ steps (Weight Shared)};
-    \node [box, left=0.6cm of cell] (idwt) {Haar IDWT ($s2 \to s1$)\\$Z_{\text{full}} \in \mathbb{R}^{B \times C \times H \times W}$};
-
-    \draw [arr] (x) -- (dwt);
-    \draw [arr] (dwt) -- (stem);
-    \draw [arr] (stem) -- (cell);
-    \draw [arr] (cell) -- (idwt);
-    \draw [draw=purple!80!black, -Stealth, dashed, line width=0.8pt] (cell.east) -- ++(0.3, 0) -- ++(0, -0.6) -| (cell.south) node[pos=0.25, below, font=\tiny\bfseries] {BPTT ($t=1\dots T$)};
-\end{tikzpicture}
-\caption{SOAR1-Micro (SOAR-TRM) Architecture. Parameter-free Haar DWT downsamples $2048\to 1024$ without aliasing. A single shared recursive cell iterates $T$ times with gradient checkpointing, synthesizing native $2048\times 2048$ logits via Haar IDWT.}
-\label{fig:trm_arch}
-\end{figure}
-
-\subsubsection{Symmetric Wavelet DWT/IDWT Manifold}
-Input images $X \in \mathbb{R}^{B \times 3 \times H \times W}$ are decomposed by parameter-free 2D Haar DWT into 4 sub-bands at half resolution ($H/2 \times W/2$), concatenated and projected via a lightweight stem ($3\times 3 \to 1\times 1$ conv) into static image embedding $E_x \in \mathbb{R}^{B \times 32 \times \frac{H}{2} \times \frac{W}{2}}$ (4,608 params). At the output, 4-subband predicted logits $Z_t \in \mathbb{R}^{B \times (4C) \times \frac{H}{2} \times \frac{W}{2}}$ are reconstructed to native $H \times W$ resolution via parameter-free Haar IDWT:
-\begin{equation}
-\mathbf{Z}_{\text{full}} = \text{IDWT}(Z_{LL}, Z_{LH}, Z_{HL}, Z_{HH})
-\end{equation}
-This mathematically guarantees zero checkerboard or sub-pixel deconvolution artifacts.
-
-\subsubsection{Shared Recurrent Cell with FiLM Global Context}
-The recurrent cell maintains a spatial scratchpad memory $H_t$ and logit tensor $Z_t$, updated as:
-\begin{align}
-(H_{t+1}, Z_{t+1}) = \text{Cell}(H_t, Z_t, E_x)
-\end{align}
-To guarantee a 100\% canvas effective receptive field from $t=1$, the cell integrates a Feature-wise Linear Modulation (FiLM) module:
-\begin{align}
-\bm{v} &= \text{AdaptiveAvgPool2D}(H_t) \in \mathbb{R}^{B \times C} \\
-(\bm{\gamma}, \bm{\beta}) &= \text{MLP}(\bm{v}) \\
-\widetilde{H}_t &= \bm{\gamma} \odot H_t + \bm{\beta}
-\end{align}
-combined with dual-stream local curvilinear depthwise convolutions ($7\times 7$ standard and $7\times 7$ dilated $d=2$).
-
-\subsubsection{Constant Activation Memory via Gradient Checkpointing}
-To prevent activation memory from scaling linearly with $T$ during Backpropagation Through Time (BPTT), we apply non-reentrant gradient checkpointing to the recurrent cell:
-\begin{equation}
-(H_{t+1}, Z_{t+1}) = \text{checkpoint}(\text{Cell}, H_t, Z_t, E_x, \text{use\_reentrant}=\text{False})
-\end{equation}
-During the forward pass, intermediate activations of step $t$ are discarded; during backward pass, they are recomputed on-the-fly. Consequently, training activation memory remains strictly $\mathcal{O}(1)$ with respect to recurrent depth $T$.
-
-\subsubsection{Decoupled Sub-Band Heads with AC Dampening}
-To eliminate high-frequency ripple artifacts, the logit update $\Delta Z_t$ is decoupled into two heads: a foundational DC ($LL$) head and a high-frequency AC ($LH, HL, HH$) head with initial dampening scale $\alpha_{\text{HF}} = 0.1$, allowing the model to learn coarse silhouette topology before injecting fine boundary textures.
-
 \subsection{Tri-Domain High-Resolution Loss Formulation}
 In high-resolution segmentation ($H \times W \ge 10^6$), standard objective functions encounter an acute \textbf{Gradient Magnitude Mismatch}. Binary Cross-Entropy averages losses over all $N = H \cdot W$ pixels, scaling per-pixel gradients as $\frac{\partial \mathcal{L}_{\text{BCE}}}{\partial z_i} \propto \frac{1}{HW} \approx 10^{-6}$. Conversely, Soft Dice normalizes by foreground cardinality, producing gradient scales of $\frac{\partial \mathcal{L}_{\text{Dice}}}{\partial z_i} \propto \frac{1}{2 N_{\text{fg}}}$. For a sparse target where $N_{\text{fg}} \approx 5{,}000$ pixels ($0.5\%$ of the canvas), the Dice gradient is $\sim 10^{-4}$---over $100\times$ larger than the BCE gradient. 
 
@@ -367,11 +305,11 @@ utilizing the Task-Aligned Assigner (TAL) \cite{feng2021tood} for dynamic positi
 \section{Experimental Evaluation: Benchmark Blueprint}
 
 \subsection{Architectural Model Scaling Tiers}
-The complete SOAR family spans edge micro-controllers to high-throughput servers, summarized in Table~\ref{tab:models}.
+The SOAR family spans edge micro-controllers to high-throughput servers, summarized in Table~\ref{tab:models}.
 
 \begin{table}[!t]
 \centering
-\caption{Architectural Specification of the Complete SOAR Family}
+\caption{Architectural Specification of the SOAR Baseline Family}
 \label{tab:models}
 \setlength{\tabcolsep}{3.5pt}
 \resizebox{\columnwidth}{!}{%
@@ -379,7 +317,6 @@ The complete SOAR family spans edge micro-controllers to high-throughput servers
 \toprule
 \textbf{Model Tier} & \textbf{Params} & \textbf{FLOPs ($1024^2$)} & \textbf{Architecture Paradigm} & \textbf{Latency} \\
 \midrule
-\textbf{SOAR1-Micro (Ours)} & \textbf{0.034M} & \textbf{4.20 G}  & Recursive Haar DWT/IDWT ($T=3$) & -- \\
 \textbf{SOAR1-Nano1 (Ours)}  & 0.85M  & 7.06 G  & WaveStem + LKR + SpectralCtx  & -- \\
 \textbf{SOAR1-Small1 (Ours)} & 2.69M  & 19.00 G & WaveStem + LKR + SpectralCtx  & -- \\
 \textbf{SOAR1-Medium1 (Ours)}& 6.45M  & 44.38 G & WaveStem + LKR + SpectralCtx  & -- \\
@@ -390,14 +327,14 @@ The complete SOAR family spans edge micro-controllers to high-throughput servers
 }
 \end{table}
 
-\subsection{Benchmark Baselines Across Five Paradigms (2020--2026)}
-To establish rigorous positioning at Q1 journal standard, SOAR is systematically benchmarked against five distinct baseline paradigms on high-resolution geometry- and topology-critical manifolds ($1024\times 1024$ and native $2048\times 2048$):
+\subsection{Benchmark Baselines Across Four Paradigms (2020--2026)}
+To establish rigorous positioning at Q1 journal standard, SOAR is systematically benchmarked against four distinct baseline paradigms on high-resolution geometry- and topology-critical manifolds ($1024\times 1024$ and native $2048\times 2048$):
 \begin{enumerate}
     \item \textbf{Curvilinear \& Topology-Aware Structural Networks}: U-Net \cite{ronneberger2015u}, D-LinkNet \cite{zhou2018dlinknet}, and CS-Net \cite{mou2019csnet};
     \item \textbf{State-of-the-Art Real-Time Dual-Resolution Networks}: BiSeNet V2 \cite{yu2021bisenet}, STDC2-Seg \cite{fan2021rethinking}, DDRNet-23-slim and DDRNet-23 \cite{hong2021deep}, PIDNet-S and PIDNet-M \cite{xu2023pidnet};
     \item \textbf{High-Resolution Boundary Refinement Specialists}: PointRend \cite{kirillov2020pointrend}, CascadePSP \cite{cheng2020cascadepsp}, and ISDNet \cite{guo2022isdnet};
     \item \textbf{Modern Vision Transformers \& Foundation Baselines}: SegFormer-B0 and SegFormer-B1 \cite{xie2021segformer}, SegNeXt-B \cite{guo2022segnext}, Mask2Former \cite{cheng2022masked}, and EfficientSAM-S \cite{xiong2024efficientsam};
-    \item \textbf{The SOAR Family (Ours)}: Spanning SOAR1-Micro (0.034M params) to SOAR1-XLarge (21.85M params).
+    \item \textbf{The SOAR Family (Ours)}: Spanning SOAR1-Nano (0.85M params) to SOAR1-XLarge (21.85M params).
 \end{enumerate}
 
 \subsection{Implementation Details and Controlled Evaluation Protocol}
@@ -407,7 +344,7 @@ To establish rigorous positioning at Q1 journal standard, SOAR is systematically
 \textbf{Controlled Supervised Protocol:} To isolate neural architecture as the sole independent variable, all baseline networks are trained under the exact same multi-task composite objective ($\mathcal{L}_{\text{total}}$), optimizer, micro-batch size ($B=1$), AMP settings, and input resolution.
 
 \subsection{Comprehensive Benchmark Comparison Framework}
-Table~\ref{tab:sota} establishes the blueprint benchmark framework across all five architectural paradigms.
+Table~\ref{tab:sota} establishes the blueprint benchmark framework across all four architectural paradigms.
 
 \begin{table*}[!t]
 \centering
@@ -445,8 +382,7 @@ Mask2Former \cite{cheng2022masked} & Masked-Attention Mask Transformer & 47.30 &
 EfficientSAM-S \cite{xiong2024efficientsam} & Masked Image Pretrained Foundation & 25.20 & 112.8 & -- & -- & -- & -- & -- & -- \\
 \midrule
 \multicolumn{10}{l}{\textit{\textbf{5. SOAR Baseline Family (Ours)}}} \\
-\textbf{SOAR1-Micro} & Tiny Recursive Haar Wavelet ($T=3$) & \textbf{0.034} & \textbf{4.20} & -- & -- & -- & -- & -- & -- \\
-\textbf{SOAR1-Nano1} & WaveStem + LKR + SpectralCtx & 0.85 & 7.06 & -- & -- & -- & -- & -- & -- \\
+\textbf{SOAR1-Nano1} & WaveStem + LKR + SpectralCtx & \textbf{0.85} & \textbf{7.06} & -- & -- & -- & -- & -- & -- \\
 \textbf{SOAR1-Small1} & WaveStem + LKR + SpectralCtx & 2.69 & 19.00 & -- & -- & -- & -- & -- & -- \\
 \textbf{SOAR1-Medium1} & WaveStem + LKR + SpectralCtx & 6.45 & 44.38 & -- & -- & -- & -- & -- & -- \\
 \textbf{SOAR1-Large1} & WaveStem + LKR + SpectralCtx & 12.92 & 76.83 & -- & -- & -- & -- & -- & -- \\
@@ -476,9 +412,9 @@ ISDNet \cite{guo2022isdnet}             & 18.30M & -- & -- & -- & -- \\
 SegFormer-B0 \cite{xie2021segformer}    & 3.75M  & -- & -- & -- & -- \\
 Mask2Former \cite{cheng2022masked}      & 47.30M & OOM & OOM & -- & -- \\
 \midrule
-\textbf{SOAR1-Micro (Ours)}             & \textbf{0.034M} & \textbf{--} & \textbf{--} & -- & -- \\
-\textbf{SOAR1-Nano1 (Ours)}             & 0.85M  & -- & -- & -- & -- \\
+\textbf{SOAR1-Nano1 (Ours)}             & \textbf{0.85M}  & \textbf{--} & \textbf{--} & -- & -- \\
 \textbf{SOAR1-Medium1 (Ours)}           & 6.45M  & -- & -- & -- & -- \\
+\textbf{SOAR1-XLarge1 (Ours)}           & 21.85M & -- & -- & -- & -- \\
 \bottomrule
 \end{tabular}%
 }
@@ -510,9 +446,6 @@ Table~\ref{tab:loss_ablation} presents the bidirectional supervision ablation bl
 & SOAR Composite ($\mathcal{L}_{\text{total}}$) & -- & -- & -- \\
 \midrule
 \multirow{2}{*}{SegFormer-B0 \cite{xie2021segformer}} & Standard ($\mathcal{L}_{\text{BCE+Dice}}$) & -- & -- & -- \\
-& SOAR Composite ($\mathcal{L}_{\text{total}}$) & -- & -- & -- \\
-\midrule
-\multirow{2}{*}{\textbf{SOAR1-Micro (Ours)}} & Standard ($\mathcal{L}_{\text{BCE+Dice}}$) & -- & -- & -- \\
 & SOAR Composite ($\mathcal{L}_{\text{total}}$) & -- & -- & -- \\
 \midrule
 \multirow{2}{*}{\textbf{SOAR1-Nano1 (Ours)}} & Standard ($\mathcal{L}_{\text{BCE+Dice}}$) & -- & -- & -- \\
@@ -549,11 +482,11 @@ Table~\ref{tab:training_ablation} outlines the ablation protocol evaluating prog
 \end{table}
 
 \subsection{Architectural Component Isolation Ablation}
-Table~\ref{tab:ablation} isolates each individual architectural component on SOAR1-Nano1 and SOAR1-Micro.
+Table~\ref{tab:ablation} isolates each individual architectural component on SOAR1-Nano1.
 
 \begin{table}[!t]
 \centering
-\caption{Component Isolation Ablation on SOAR1 Architectures ($1024\times 1024$)}
+\caption{Component Isolation Ablation on SOAR1-Nano1 ($1024\times 1024$)}
 \label{tab:ablation}
 \setlength{\tabcolsep}{3.5pt}
 \resizebox{\columnwidth}{!}{%
@@ -569,10 +502,6 @@ Table~\ref{tab:ablation} isolates each individual architectural component on SOA
 6. + Gated Convex Fuse \& Agg                  & -- & -- & -- \\
 7. + Sub-Pixel SegHead ($s2\to s1$)            & -- & -- & -- \\
 8. \textbf{Full SOAR1-Nano1 Baseline}          & -- & -- & -- \\
-\midrule
-9. SOAR1-Micro (Without Checkpointing)         & -- & -- & -- \\
-10. SOAR1-Micro (Without FiLM Global Context)  & -- & -- & -- \\
-11. \textbf{Full SOAR1-Micro ($T=3$ Checkpointed)} & -- & -- & -- \\
 \bottomrule
 \end{tabular}%
 }
@@ -600,7 +529,6 @@ DDRNet-23-slim \cite{hong2021deep}   & -- / --  & -- / --  & -- / --  & -- / -- 
 PIDNet-S \cite{xu2023pidnet}         & -- / --  & -- / --  & -- / --  & -- / -- \\
 SegFormer-B0 \cite{xie2021segformer} & -- / --  & -- / --  & -- / --  & -- / -- \\
 \midrule
-\textbf{SOAR1-Micro (Ours)}          & -- / --  & -- / --  & -- / --  & -- / -- \\
 \textbf{SOAR1-Nano1 (Ours)}          & -- / --  & -- / --  & -- / --  & -- / -- \\
 \textbf{SOAR1-Small1 (Ours)}         & -- / --  & -- / --  & -- / --  & -- / -- \\
 \textbf{SOAR1-Medium1 (Ours)}        & -- / --  & -- / --  & -- / --  & -- / -- \\
@@ -610,7 +538,7 @@ SegFormer-B0 \cite{xie2021segformer} & -- / --  & -- / --  & -- / --  & -- / -- 
 \end{table}
 
 \section{Conclusion}
-This paper presented SOAR, a sub-pixel oriented, resolution-preserving neural architecture framework engineered to resolve the boundary-attenuation, topological-fracture, and memory-scaling limits of deep vision in high-resolution, geometry-critical prediction. By unifying the high-throughput SOAR1 family (WaveStem, LKR, SpectralCtx, Gated Fuse, SegHead) with the ultra-lightweight SOAR1-Micro recursive model ($\approx 34\text{k}$ parameters with $\mathcal{O}(1)$ checkpointed memory) under an equilibrated tri-domain curriculum loss, SOAR establishes an end-to-end blueprint for high-resolution dense perception. This blueprint provides the foundation for empirical validation across five leading baseline paradigms on multi-megapixel manifolds.
+This paper presented SOAR, a sub-pixel oriented, resolution-preserving neural architecture framework engineered to resolve the boundary-attenuation, topological-fracture, and memory-scaling limits of deep vision in high-resolution, geometry-critical prediction. By unifying the high-throughput SOAR1 family (WaveStem, LKR, SpectralCtx, Gated Fuse, SegHead) under an equilibrated tri-domain curriculum loss, SOAR establishes an end-to-end blueprint for high-resolution dense perception. This blueprint provides the foundation for empirical validation across premier baseline paradigms on multi-megapixel manifolds.
 
 \bibliographystyle{IEEEtran}
 \begin{thebibliography}{10}
@@ -671,12 +599,6 @@ L.~Mou, L.~Chen, J.~Cheng, Z.~Gu, H.~Zhao, and J.~Liu, ``CS-Net: Channel and spa
 
 \bibitem{zhou2018dlinknet}
 L.~Zhou, C.~Zhang, and M.~Wu, ``D-LinkNet: LinkNet with pretrained encoder and dilated convolution for high resolution satellite imagery road extraction,'' in \emph{Proc. IEEE Conf. Comput. Vis. Pattern Recognit. Workshops (CVPRW)}, 2018, pp. 182--186.
-
-\bibitem{jolicoeur2025trm}
-A.~Jolicoeur-Martineau \emph{et al.}, ``Tiny Recursive Model: Solving reasoning puzzles with small-scale weight sharing,'' \emph{Samsung SAIL Montreal Technical Report / arXiv}, 2025.
-
-\bibitem{bai2019deep}
-S.~Bai, J.~Z. Kolter, and V.~Koltun, ``Deep equilibrium models,'' in \emph{Adv. Neural Inf. Process. Syst. (NeurIPS)}, vol.~32, 2019, pp. 690--701.
 
 \bibitem{shit2021cldice}
 S.~Shit, J.~C. Paetzold, I.~Ezhov, A.~Moafi, C.~Zhuang, E.~B. Weninger, F.~Tuchdinambara, C.~Birk, and B.~H. Menze, ``clDice - a novel topology-preserving loss function for tubular structure segmentation,'' in \emph{Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR)}, 2021, pp. 16\,560--16\,569.
