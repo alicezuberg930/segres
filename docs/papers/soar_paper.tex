@@ -330,9 +330,10 @@ By immediately releasing large spatial tensors (e.g., $s2$ detail tensors of $13
 \subsection{Tri-Domain High-Resolution Loss Formulation}
 In high-resolution segmentation ($H \times W \ge 10^6$), standard objective functions encounter an acute \textbf{Gradient Magnitude Mismatch}. Binary Cross-Entropy averages losses over all $N = H \cdot W$ pixels, scaling per-pixel gradients as $\frac{\partial \mathcal{L}_{\text{BCE}}}{\partial z_i} \propto \frac{1}{HW} \approx 10^{-6}$. Conversely, Soft Dice normalizes by foreground cardinality, producing gradient scales of $\frac{\partial \mathcal{L}_{\text{Dice}}}{\partial z_i} \propto \frac{1}{2 N_{\text{fg}}}$. For a sparse target where $N_{\text{fg}} \approx 5{,}000$ pixels ($0.5\%$ of the canvas), the Dice gradient is $\sim 10^{-4}$---over $100\times$ larger than the BCE gradient. 
 
-To equilibrate backpropagated signals, SOAR establishes a tri-domain objective:
+To equilibrate backpropagated signals, SOAR establishes the unified tri-domain high-resolution objective:
 \begin{equation}
-\mathcal{L}_{\text{mask}} = \mathcal{L}_{\text{region}} + \lambda_{\text{bnd}} \mathcal{L}_{\text{boundary}} + \lambda_{\text{cldice}}(e) \mathcal{L}_{\text{clDice}}
+\label{eq:soar_loss}
+\mathcal{L}_{\text{SOAR}} = \mathcal{L}_{\text{region}} + \lambda_{\text{bnd}} \mathcal{L}_{\text{boundary}} + \lambda_{\text{cldice}}(e) \mathcal{L}_{\text{clDice}}
 \end{equation}
 where $\mathcal{L}_{\text{region}} = w_{\text{dice}} \mathcal{L}_{\text{Dice}} + w_{\text{focal}} \mathcal{L}_{\text{Focal}}$ attenuates confident background gradients by $>400\times$; $\mathcal{L}_{\text{boundary}}$ computes depthwise Sobel contour Dice alignment; and $\mathcal{L}_{\text{clDice}}$ enforces soft morphological skeleton intersection \cite{shit2021cldice} with a linear warmup curriculum:
 \begin{equation}
@@ -343,7 +344,7 @@ with $E_{\text{warmup}} = 5$ epochs and $\lambda_{\text{target}} = 0.5$.
 \subsection{Unified End-to-End Supervised Multi-Task Protocol}
 SOAR couples sub-pixel mask supervision with anchor-free detection heads:
 \begin{equation}
-\mathcal{L}_{\text{total}} = \lambda_{\text{box}} \mathcal{L}_{\text{CIoU}} + \lambda_{\text{dfl}} \mathcal{L}_{\text{DFL}} + \lambda_{\text{cls}} \mathcal{L}_{\text{Varifocal}} + \lambda_{\text{mask}} \mathcal{L}_{\text{mask}}
+\mathcal{L}_{\text{multi}} = \lambda_{\text{box}} \mathcal{L}_{\text{CIoU}} + \lambda_{\text{dfl}} \mathcal{L}_{\text{DFL}} + \lambda_{\text{cls}} \mathcal{L}_{\text{Varifocal}} + \lambda_{\text{mask}} \mathcal{L}_{\text{SOAR}}
 \end{equation}
 utilizing the Task-Aligned Assigner (TAL) \cite{feng2021tood} for dynamic positive anchor selection, enabling seamless ingestion of both standardized \texttt{data.yaml} datasets and MS COCO polygon coordinates.
 
@@ -360,18 +361,12 @@ To rigorously evaluate SOAR across diverse operational envelopes without succumb
 \end{enumerate}
 
 \subsection{Unified Experimental Setup}
-\textbf{Unified Training Protocol and Bias Elimination:} A pervasive deficiency in published semantic segmentation literature is the confounding interaction between novel loss formulations and architectural designs. When an architecture is trained under an engineered, multi-term boundary loss while baselines are trained under vanilla cross-entropy, reported performance gains often reflect loss optimization dynamics rather than architectural superiority. 
-
-To eliminate all optimization bias and isolate the neural architecture as the sole independent variable, \textbf{every network in our benchmark suite (both baselines and SOAR variants) is trained from scratch under the exact same standardized loss function}:
+\textbf{Unified Training Protocol Under SOAR Loss:} In high-resolution curvilinear and geometry-critical vision, benchmarking models under disparate loss functions (such as naive cross-entropy or plain Dice) introduces severe optimization bias and foreground gradient swamping. To establish absolute experimental fairness and isolate the neural architecture as the sole independent variable, \textbf{every network across our benchmark suite (both all baseline architectures and SOAR variants) is trained from scratch strictly under the exact same loss function: the unified SOAR Tri-Domain High-Resolution Loss ($\mathcal{L}_{\text{SOAR}}$, Eq.~\eqref{eq:soar_loss})}:
 \begin{equation}
 \label{eq:unified_loss}
-\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \mathcal{L}_{\text{Dice}}
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{SOAR}} = \mathcal{L}_{\text{region}} + \lambda_{\text{bnd}} \mathcal{L}_{\text{boundary}} + \lambda_{\text{cldice}}(e) \mathcal{L}_{\text{clDice}}
 \end{equation}
-where $\mathcal{L}_{\text{CE}}$ denotes numerically stabilized Binary Cross-Entropy and $\mathcal{L}_{\text{Dice}}$ is the scale-invariant Soft Dice loss:
-\begin{equation}
-\mathcal{L}_{\text{Dice}} = 1 - \frac{2 \sum_{i} p_i y_i + \epsilon}{\sum_{i} p_i^2 + \sum_{i} y_i^2 + \epsilon}
-\end{equation}
-with Laplace smoothing $\epsilon = 10^{-5}$. Under this strictly controlled protocol, performance differentials across overlap, contour sharpness, and topological continuity arise exclusively from architectural mechanisms (i.e., Haar frequency preservation, wide-field LKR receptive fields, global spectral context, and sub-pixel logit shuffling).
+By subjecting all competing architectures to this identical, geometry-preserving objective from epoch zero, every network benefits equally from balanced foreground-background gradients ($\mathcal{L}_{\text{region}}$), high-frequency boundary sharpening ($\mathcal{L}_{\text{boundary}}$), and differentiable skeleton topology supervision ($\mathcal{L}_{\text{clDice}}$). Consequently, there are no confounding experiments or ablations comparing alternative loss functions; all empirical performance margins across region overlap (mIoU), boundary fidelity (bIoU), and topological continuity (clDice) reflect purely the architectural capabilities of the models (i.e., lossless Haar WaveStem frequency preservation, wide-field LKR receptive fields, global spectral context, gated convex fusion, and direct sub-pixel periodic shuffling).
 
 \textbf{Optimization Dynamics \& Hardware Constraints:} All models are trained with micro-batch size $B=1$ under gradient accumulation steps $\kappa = 4$ (effective batch size 4), reflecting realistic edge training budgets on a single commercial 16GB GPU (NVIDIA RTX 4090 / Tesla T4). We employ the AdamW optimizer with weight decay $10^{-4}$, initial learning rate $\eta_0 = 10^{-3}$, and a cosine annealing learning rate schedule decaying to $10^{-6}$ over 50 epochs, preceded by a 5-epoch linear warmup. Forward and backward passes execute under FP16 Automatic Mixed Precision (AMP).
 
@@ -394,7 +389,7 @@ In contrast, the SOAR family establishes a superior efficiency envelope: \textbf
 
 \begin{table}[t]
 \centering
-\caption{Comprehensive Benchmark on High-Resolution Manifolds ($1024\times 1024$) Under Unified Training Protocol ($\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \mathcal{L}_{\text{Dice}}$, $B=1$, FP16 AMP). Empirical metric entries represent the experimental blueprint awaiting execution.}
+\caption{Comprehensive Benchmark on High-Resolution Manifolds ($1024\times 1024$) Under Unified SOAR Loss Protocol ($\mathcal{L}_{\text{SOAR}}$, $B=1$, FP16 AMP). Empirical metric entries represent the experimental blueprint awaiting execution.}
 \label{tab:main_benchmark}
 \setlength{\tabcolsep}{5pt}
 \renewcommand{\arraystretch}{1.15}
@@ -460,7 +455,7 @@ By decoupling spatial geometry from high-frequency boundary phase via orthogonal
 
 \begin{table}[t]
 \centering
-\caption{Cross-Domain Generalization Benchmark Across Heterogeneous High-Resolution Geometry Domains ($1024\times 1024$) Under Standardized Objective ($\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \mathcal{L}_{\text{Dice}}$).}
+\caption{Cross-Domain Generalization Benchmark Across Heterogeneous High-Resolution Geometry Domains ($1024\times 1024$) Under Unified SOAR Loss Protocol ($\mathcal{L}_{\text{SOAR}}$).}
 \label{tab:domain_generalization}
 \setlength{\tabcolsep}{6.5pt}
 \renewcommand{\arraystretch}{1.15}
@@ -501,7 +496,7 @@ To systematically quantify the empirical contribution of each individual design 
 
 \begin{table}[t]
 \centering
-\caption{Architectural Component Isolation Ablation on SOAR1-Nano1 ($1024\times 1024$, $B=1$, FP16 AMP) Under Unified Objective ($\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \mathcal{L}_{\text{Dice}}$).}
+\caption{Architectural Component Isolation Ablation on SOAR1-Nano1 ($1024\times 1024$, $B=1$, FP16 AMP) Under Unified SOAR Loss Protocol ($\mathcal{L}_{\text{SOAR}}$).}
 \label{tab:ablation}
 \setlength{\tabcolsep}{5pt}
 \renewcommand{\arraystretch}{1.15}
