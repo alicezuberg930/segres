@@ -373,22 +373,22 @@ To establish rigorous positioning at Q1 journal standard, SOAR is systematically
 
 \subsection{Implementation Details and Controlled Evaluation Protocol}
 \textbf{Optimization:} All models are optimized using AdamW with weight decay $10^{-4}$, initial learning rate $\eta_0 = 10^{-3}$, cosine annealing decay over 100 epochs, linear warmup of 5 epochs, and Exponential Moving Average (EMA, momentum 0.9999).
-\textbf{Precision and Micro-Batching:} Mixed precision (FP16 AMP) on NVIDIA RTX 4090 GPUs and NVIDIA Jetson Orin NX (16GB, 20W TDP) with physical batch size $B=1$ and gradient accumulation steps $\kappa = 4$.
-\textbf{Datasets:} Evaluated on: (1) DeepGlobe Road Extraction ($1024\times 1024$); (2) CRACK500 Pavement Crack Dataset ($1024\times 1024$); (3) MAGFiLO Filamentous Materials Dataset ($1024\times 1024$); and (4) Ultra-High-Resolution Gigapixel Lithography Manifolds ($2048\times 2048$).
+\textbf{Controlled Experimental Environment:} All models are trained and evaluated in a unified single-GPU computing environment (16GB GPU memory, FP16 automatic mixed precision) with physical batch size $B=1$ and gradient accumulation steps $\kappa = 4$. By eliminating cross-device hardware discrepancies, our evaluation strictly isolates segmentation accuracy, boundary fidelity, and topological continuity as the primary scientific criteria.
+\textbf{Datasets:} Evaluated across three challenging high-resolution geometry- and topology-critical domains: (1) DeepGlobe Road Extraction ($1024\times 1024$); (2) CRACK500 Pavement Crack Dataset ($1024\times 1024$); (3) MAGFiLO Filamentous Materials Dataset ($1024\times 1024$); and (4) Ultra-High-Resolution Gigapixel Lithography Manifolds ($2048\times 2048$).
 \textbf{Controlled Supervised Protocol:} To isolate neural architecture as the sole independent variable, all baseline networks are trained under the exact same multi-task composite objective ($\mathcal{L}_{\text{total}}$), optimizer, micro-batch size ($B=1$), AMP settings, and input resolution.
 
 \subsection{Comprehensive Benchmark Comparison Framework}
-Table~\ref{tab:sota} establishes the blueprint benchmark framework across all four architectural paradigms.
+Table~\ref{tab:sota} establishes the blueprint benchmark framework across all four architectural paradigms, reporting segmentation quality across overlap, contour, and topological connectivity metrics.
 
 \begin{table*}[!t]
 \centering
 \caption{Comprehensive Benchmark Comparison with State-of-the-Art Across Distinct Architectural Paradigms on High-Resolution Geometry Manifolds ($1024\times 1024$). Benchmark result entries represent the empirical blueprint awaiting experimental execution.}
 \label{tab:sota}
-\setlength{\tabcolsep}{4.5pt}
+\setlength{\tabcolsep}{5.0pt}
 \renewcommand{\arraystretch}{1.12}
 \begin{tabular}{llcccccccc}
 \toprule
-\textbf{Model Architecture} & \textbf{Architectural Paradigm} & \textbf{Params (M)} & \textbf{FLOPs ($1024^2$, G)} & \textbf{mIoU (\%)} & \textbf{Dice (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} & \textbf{Latency (ms)} & \textbf{FPS} \\
+\textbf{Model Architecture} & \textbf{Architectural Paradigm} & \textbf{Params (M)} & \textbf{FLOPs ($1024^2$, G)} & \textbf{mIoU (\%)} & \textbf{Dice (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} & \textbf{Prec. (\%)} & \textbf{Rec. (\%)} \\
 \midrule
 \multicolumn{10}{l}{\textit{\textbf{1. Curvilinear \& Topology-Aware Structural Networks}}} \\
 U-Net \cite{ronneberger2015u} & Encoder-Decoder Skip & 17.27 & 218.4 & -- & -- & -- & -- & -- & -- \\
@@ -425,30 +425,30 @@ EfficientSAM-S \cite{xiong2024efficientsam} & Masked Image Pretrained Foundation
 \end{tabular}%
 \end{table*}
 
-\subsection{Multi-Megapixel Scaling & Activation Memory Footprint ($2048\times 2048$)}
-Table~\ref{tab:highres_vram} outlines the evaluation blueprint under native $2048\times 2048$ resolution with micro-batch size $B=1$.
+\subsection{Native Ultra-High-Resolution Segmentation Benchmark ($2048\times 2048$)}
+Table~\ref{tab:highres_results} outlines the evaluation blueprint under native $2048\times 2048$ resolution with micro-batch size $B=1$, assessing boundary fidelity and topological connectivity on multi-megapixel manifolds.
 
 \begin{table}[!t]
 \centering
-\caption{Multi-Megapixel Performance and Training Activation Memory Scaling Under Native $2048\times 2048$ Resolution ($B=1$, FP16 AMP)}
-\label{tab:highres_vram}
-\setlength{\tabcolsep}{3.2pt}
+\caption{Ultra-High-Resolution Segmentation Benchmark Results Under Native $2048\times 2048$ Resolution ($B=1$, FP16 AMP)}
+\label{tab:highres_results}
+\setlength{\tabcolsep}{4.0pt}
 \resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccccc}
 \toprule
-\textbf{Model Architecture} & \textbf{Params} & \textbf{Train VRAM} & \textbf{Peak Activation} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} \\
+\textbf{Model Architecture} & \textbf{Params (M)} & \textbf{mIoU (\%)} & \textbf{Dice (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} \\
 \midrule
-U-Net \cite{ronneberger2015u}          & 17.27M & -- & -- & -- & -- \\
-CS-Net \cite{mou2019csnet}             & 15.08M & -- & -- & -- & -- \\
-BiSeNet V2 \cite{yu2021bisenet}         & 3.42M  & -- & -- & -- & -- \\
-PIDNet-S \cite{xu2023pidnet}            & 7.62M  & -- & -- & -- & -- \\
-ISDNet \cite{guo2022isdnet}             & 18.30M & -- & -- & -- & -- \\
-SegFormer-B0 \cite{xie2021segformer}    & 3.75M  & -- & -- & -- & -- \\
-Mask2Former \cite{cheng2022masked}      & 47.30M & OOM & OOM & -- & -- \\
+U-Net \cite{ronneberger2015u}          & 17.27 & -- & -- & -- & -- \\
+CS-Net \cite{mou2019csnet}             & 15.08 & -- & -- & -- & -- \\
+BiSeNet V2 \cite{yu2021bisenet}         & 3.42  & -- & -- & -- & -- \\
+PIDNet-S \cite{xu2023pidnet}            & 7.62  & -- & -- & -- & -- \\
+ISDNet \cite{guo2022isdnet}             & 18.30 & -- & -- & -- & -- \\
+SegFormer-B0 \cite{xie2021segformer}    & 3.75  & -- & -- & -- & -- \\
+Mask2Former \cite{cheng2022masked}      & 47.30 & -- & -- & -- & -- \\
 \midrule
-\textbf{SOAR1-Nano1 (Ours)}             & \textbf{0.85M}  & \textbf{--} & \textbf{--} & -- & -- \\
-\textbf{SOAR1-Medium1 (Ours)}           & 6.45M  & -- & -- & -- & -- \\
-\textbf{SOAR1-XLarge1 (Ours)}           & 21.85M & -- & -- & -- & -- \\
+\textbf{SOAR1-Nano1 (Ours)}             & \textbf{0.85} & -- & -- & -- & -- \\
+\textbf{SOAR1-Medium1 (Ours)}           & 6.45  & -- & -- & -- & -- \\
+\textbf{SOAR1-XLarge1 (Ours)}           & 21.85 & -- & -- & -- & -- \\
 \bottomrule
 \end{tabular}%
 }
@@ -541,35 +541,38 @@ Table~\ref{tab:ablation} isolates each individual architectural component on SOA
 }
 \end{table}
 
-\subsection{Edge Accelerator Latency and Memory Access Cost}
-Table~\ref{tab:edge_bench} benchmarks inference latency across hardware profiles: desktop workstation (NVIDIA RTX 4090) versus embedded accelerator (NVIDIA Jetson Orin NX 16GB).
+\subsection{Cross-Dataset Generalization on Diverse High-Resolution Domains}
+To evaluate the domain-invariant segmentation capability of SOAR, Table~\ref{tab:multi_dataset} reports performance across three distinct high-resolution geometry- and topology-critical domains: (1) Satellite Road Network Extraction (DeepGlobe, $1024\times 1024$); (2) Infrastructure Pavement Fracture Tracing (CRACK500, $1024\times 1024$); and (3) Micro-Filamentous Material Segmentation (MAGFiLO, $1024\times 1024$).
 
-\begin{table}[!t]
+\begin{table*}[!t]
 \centering
-\caption{Edge Hardware Latency and Throughput Benchmarks Across Architectural Paradigms ($1024\times 1024$)}
-\label{tab:edge_bench}
-\setlength{\tabcolsep}{2.5pt}
-\resizebox{\columnwidth}{!}{%
-\begin{tabular}{lcccc}
+\caption{Cross-Dataset Generalization Benchmark Across Diverse High-Resolution Domains ($1024\times 1024$)}
+\label{tab:multi_dataset}
+\setlength{\tabcolsep}{4.5pt}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{lccccccccc}
 \toprule
-\multirow{2}{*}{\textbf{Model Architecture}} & \multicolumn{2}{c}{\textbf{RTX 4090 (ms / FPS)}} & \multicolumn{2}{c}{\textbf{Jetson Orin NX (ms / FPS)}} \\
-\cmidrule(lr){2-3} \cmidrule(lr){4-5}
-& \textbf{FP16} & \textbf{INT8 TRT} & \textbf{FP16} & \textbf{INT8 TRT} \\
+\multirow{2}{*}{\textbf{Model Architecture}} & \multicolumn{3}{c}{\textbf{DeepGlobe (Road Networks)}} & \multicolumn{3}{c}{\textbf{CRACK500 (Pavement Cracks)}} & \multicolumn{3}{c}{\textbf{MAGFiLO (Micro-Filaments)}} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10}
+& \textbf{mIoU (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} & \textbf{mIoU (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} & \textbf{mIoU (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} \\
 \midrule
-CS-Net \cite{mou2019csnet}          & -- / --  & -- / --  & -- / --  & -- / -- \\
-D-LinkNet \cite{zhou2018dlinknet}    & -- / --  & -- / --  & -- / --  & -- / -- \\
-BiSeNet V2 \cite{yu2021bisenet}      & -- / --  & -- / --  & -- / --  & -- / -- \\
-DDRNet-23-slim \cite{hong2021deep}   & -- / --  & -- / --  & -- / --  & -- / -- \\
-PIDNet-S \cite{xu2023pidnet}         & -- / --  & -- / --  & -- / --  & -- / -- \\
-SegFormer-B0 \cite{xie2021segformer} & -- / --  & -- / --  & -- / --  & -- / -- \\
+U-Net \cite{ronneberger2015u}          & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+CS-Net \cite{mou2019csnet}             & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+D-LinkNet \cite{zhou2018dlinknet}      & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+BiSeNet V2 \cite{yu2021bisenet}         & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+PIDNet-S \cite{xu2023pidnet}            & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+ISDNet \cite{guo2022isdnet}             & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+SegFormer-B0 \cite{xie2021segformer}    & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+SegNeXt-B \cite{guo2022segnext}         & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \midrule
-\textbf{SOAR1-Nano1 (Ours)}          & -- / --  & -- / --  & -- / --  & -- / -- \\
-\textbf{SOAR1-Small1 (Ours)}         & -- / --  & -- / --  & -- / --  & -- / -- \\
-\textbf{SOAR1-Medium1 (Ours)}        & -- / --  & -- / --  & -- / --  & -- / -- \\
+\textbf{SOAR1-Nano1 (Ours)}             & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\textbf{SOAR1-Small1 (Ours)}            & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\textbf{SOAR1-Medium1 (Ours)}           & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\textbf{SOAR1-Large1 (Ours)}            & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\textbf{SOAR1-XLarge1 (Ours)}           & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \bottomrule
-\end{tabular}%
-}
-\end{table}
+\end{tabular}
+\end{table*}
 
 \section{Conclusion}
 This paper presented SOAR, a sub-pixel oriented, resolution-preserving neural architecture framework engineered to resolve the boundary-attenuation, topological-fracture, and memory-scaling limits of deep vision in high-resolution, geometry-critical prediction. By unifying the high-throughput SOAR1 family (WaveStem, LKR, SpectralCtx, Gated Fuse, SegHead) under an equilibrated tri-domain curriculum loss, SOAR establishes an end-to-end blueprint for high-resolution dense perception. This blueprint provides the foundation for empirical validation across premier baseline paradigms on multi-megapixel manifolds.
