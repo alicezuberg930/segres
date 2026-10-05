@@ -4,6 +4,14 @@ from .rle import binary_mask_to_rle, rle_to_binary_mask, create_submission_csv
 from .metrics import compute_iou, compute_dice, compute_panoptic_quality
 from .ema import ModelEMA
 from .checkpoint import save_checkpoint, load_checkpoint
+from .profile import (
+    profile_model,
+    get_model_paradigm,
+    get_latex_model_name,
+    format_latex_row_table1,
+    format_latex_row_table2,
+    format_latex_row_table3,
+)
 
 __all__ = [
     "binary_mask_to_rle",
@@ -15,4 +23,10 @@ __all__ = [
     "ModelEMA",
     "save_checkpoint",
     "load_checkpoint",
+    "profile_model",
+    "get_model_paradigm",
+    "get_latex_model_name",
+    "format_latex_row_table1",
+    "format_latex_row_table2",
+    "format_latex_row_table3",
 ]

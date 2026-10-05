@@ -23,26 +23,35 @@ SOAR_PRESETS: Dict[str, str] = {
     "soar": "configs/models/soar_medium1.yaml",
     "soarnano": "configs/models/soar_nano1.yaml",
     "soarnano1": "configs/models/soar_nano1.yaml",
+    "soar1nano": "configs/models/soar_nano1.yaml",
+    "soar1nano1": "configs/models/soar_nano1.yaml",
     "soarsmall": "configs/models/soar_small1.yaml",
     "soarsmall1": "configs/models/soar_small1.yaml",
+    "soar1small": "configs/models/soar_small1.yaml",
+    "soar1small1": "configs/models/soar_small1.yaml",
     "soarmedium": "configs/models/soar_medium1.yaml",
     "soarmedium1": "configs/models/soar_medium1.yaml",
+    "soar1medium": "configs/models/soar_medium1.yaml",
+    "soar1medium1": "configs/models/soar_medium1.yaml",
     "soarlarge": "configs/models/soar_large1.yaml",
     "soarlarge1": "configs/models/soar_large1.yaml",
+    "soar1large": "configs/models/soar_large1.yaml",
+    "soar1large1": "configs/models/soar_large1.yaml",
     "soarxlarge": "configs/models/soar_xlarge1.yaml",
     "soarxlarge1": "configs/models/soar_xlarge1.yaml",
+    "soar1xlarge": "configs/models/soar_xlarge1.yaml",
+    "soar1xlarge1": "configs/models/soar_xlarge1.yaml",
 }
 
 
 def list_models() -> List[str]:
     """Return all recognized model names across SOAR and benchmark baselines."""
     return [
-        "soar",
-        "soar_nano",
-        "soar_small",
-        "soar_medium",
-        "soar_large",
-        "soar_xlarge",
+        "soar_nano1",
+        "soar_small1",
+        "soar_medium1",
+        "soar_large1",
+        "soar_xlarge1",
     ] + list_benchmark_models()
 
 
@@ -95,12 +104,13 @@ def build_model(
     norm_key = model_str.lower().replace("-", "").replace("_", "")
 
     # 1. Check peer benchmark baselines
-    for reg_name, cls in BENCHMARK_MODELS.items():
+    for reg_name, cls_or_fn in BENCHMARK_MODELS.items():
         if norm_key == reg_name.lower().replace("-", "").replace("_", ""):
-            net = cls(in_channels=in_channels, num_classes=num_classes, **kwargs)
+            net = cls_or_fn(in_channels=in_channels, num_classes=num_classes, **kwargs)
             if verbose:
                 params_m = sum(p.numel() for p in net.parameters()) / 1e6
-                print(f"[{cls.__name__}] Initialized with in_channels={in_channels}, num_classes={num_classes} ({params_m:.2f}M params)")
+                display_name = getattr(net, "__class__", type(net)).__name__
+                print(f"[{display_name}] Initialized with in_channels={in_channels}, num_classes={num_classes} ({params_m:.2f}M params)")
             return net
 
     # 2. Check SOAR presets (soar_nano1, soar_small1, etc.)

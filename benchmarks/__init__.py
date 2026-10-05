@@ -11,6 +11,30 @@ from .ddrnet import DDRNet, DDRNet23
 from .pidnet import PIDNet
 from .segformer import SegFormer
 
+def _build_pidnet_s(in_channels: int = 3, num_classes: int = 1, **kwargs) -> PIDNet:
+    return PIDNet(in_channels=in_channels, num_classes=num_classes, variant="s", **kwargs)
+
+
+def _build_pidnet_m(in_channels: int = 3, num_classes: int = 1, **kwargs) -> PIDNet:
+    return PIDNet(in_channels=in_channels, num_classes=num_classes, variant="m", **kwargs)
+
+
+def _build_segformer_b0(in_channels: int = 3, num_classes: int = 1, **kwargs) -> SegFormer:
+    return SegFormer(in_channels=in_channels, num_classes=num_classes, variant="b0", **kwargs)
+
+
+def _build_segformer_b1(in_channels: int = 3, num_classes: int = 1, **kwargs) -> SegFormer:
+    return SegFormer(in_channels=in_channels, num_classes=num_classes, variant="b1", **kwargs)
+
+
+def _build_ddrnet_slim(in_channels: int = 3, num_classes: int = 1, **kwargs) -> DDRNet:
+    return DDRNet(in_channels=in_channels, num_classes=num_classes, variant="slim", **kwargs)
+
+
+def _build_ddrnet_std(in_channels: int = 3, num_classes: int = 1, **kwargs) -> DDRNet:
+    return DDRNet(in_channels=in_channels, num_classes=num_classes, variant="standard", **kwargs)
+
+
 BENCHMARK_MODELS: Dict[str, Any] = {
     "unet": UNet,
     "dlinknet": DLinkNet,
@@ -20,18 +44,43 @@ BENCHMARK_MODELS: Dict[str, Any] = {
     "bisenetv2": BiSeNetV2,
     "bisenet": BiSeNetV2,
     "ddrnet": DDRNet,
-    "ddrnet23": DDRNet23,
-    "ddrnet-23": DDRNet23,
-    "pidnet": PIDNet,
-    "pidnet-s": PIDNet,
-    "segformer": SegFormer,
-    "segformer-b0": SegFormer,
+    "ddrnet-slim": _build_ddrnet_slim,
+    "ddrnet_slim": _build_ddrnet_slim,
+    "ddrnet23-slim": _build_ddrnet_slim,
+    "ddrnet-23-slim": _build_ddrnet_slim,
+    "ddrnet23_slim": _build_ddrnet_slim,
+    "ddrnet23": _build_ddrnet_std,
+    "ddrnet-23": _build_ddrnet_std,
+    "ddrnet_23": _build_ddrnet_std,
+    "ddrnet-std": _build_ddrnet_std,
+    "ddrnet_std": _build_ddrnet_std,
+    "pidnet": _build_pidnet_s,
+    "pidnet-s": _build_pidnet_s,
+    "pidnet_s": _build_pidnet_s,
+    "pidnet-m": _build_pidnet_m,
+    "pidnet_m": _build_pidnet_m,
+    "segformer": _build_segformer_b0,
+    "segformer-b0": _build_segformer_b0,
+    "segformer_b0": _build_segformer_b0,
+    "segformer-b1": _build_segformer_b1,
+    "segformer_b1": _build_segformer_b1,
 }
 
 
 def list_benchmark_models() -> List[str]:
     """Return list of supported benchmark model architecture keys."""
-    return ["unet", "dlinknet", "csnet", "bisenetv2", "ddrnet", "pidnet", "segformer"]
+    return [
+        "unet",
+        "dlinknet",
+        "csnet",
+        "bisenetv2",
+        "ddrnet-slim",
+        "ddrnet-23",
+        "pidnet-s",
+        "pidnet-m",
+        "segformer-b0",
+        "segformer-b1",
+    ]
 
 
 def get_benchmark_model(
@@ -42,9 +91,9 @@ def get_benchmark_model(
 ) -> nn.Module:
     """Instantiate a benchmark model by name."""
     key = name.lower().replace("-", "").replace("_", "")
-    for reg_name, cls in BENCHMARK_MODELS.items():
+    for reg_name, cls_or_fn in BENCHMARK_MODELS.items():
         if key == reg_name.lower().replace("-", "").replace("_", ""):
-            return cls(in_channels=in_channels, num_classes=num_classes, **kwargs)
+            return cls_or_fn(in_channels=in_channels, num_classes=num_classes, **kwargs)
     raise ValueError(f"Unknown benchmark model: '{name}'. Available: {list_benchmark_models()}")
 
 

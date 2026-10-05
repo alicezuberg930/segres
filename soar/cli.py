@@ -188,10 +188,11 @@ def train(args):
     print(f"  - Resolution:    {img_size[0]}x{img_size[1]}")
     print(f"  - Classes:       {num_classes}")
     print(f"  - Epochs:        {args.epochs}")
-    print(f"  - Batch Size:    {args.batch_size}")
+    print(f"  - Batch Size:    {args.batch_size} (Grad Accum: {args.accumulate_grad_batches})")
     print(f"  - Device:        {args.device}")
     print(f"  - Mixed Prec.:   {args.amp}")
     print(f"  - Loss Type:     {args.loss}")
+    print(f"  - Samples:       {args.samples if args.samples is not None else 'All'}")
     print(f"  - RAM Caching:   {getattr(args, 'cache_ram', False)}")
     print("=" * 70)
 
@@ -230,6 +231,7 @@ def train(args):
         annotation_file=args.annotation_file,
         augment=(not args.no_augment),
         samples=args.samples,
+        loss=args.loss,
         cache_ram=getattr(args, "cache_ram", False),
     )
 

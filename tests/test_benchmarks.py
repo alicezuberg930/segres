@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cv2
+import gc
 import numpy as np
 import torch
 import yaml
@@ -29,27 +30,31 @@ from benchmarks.common.predictor import BenchmarkPredictor
 
 def test_model_forward_passes():
     """Verify all 7 baseline architectures can perform forward pass and output matching tensor shapes."""
-    models = {
-        "UNet": UNet(in_channels=3, num_classes=2, base_channels=32),
-        "DLinkNet": DLinkNet(in_channels=3, num_classes=2),
-        "CSNet": CSNet(in_channels=3, num_classes=2, base_channels=32),
-        "BiSeNetV2": BiSeNetV2(in_channels=3, num_classes=2),
-        "DDRNet_slim": DDRNet(in_channels=3, num_classes=2, variant="slim"),
-        "DDRNet_std": DDRNet(in_channels=3, num_classes=2, variant="standard"),
-        "PIDNet_s": PIDNet(in_channels=3, num_classes=2, variant="s"),
-        "PIDNet_m": PIDNet(in_channels=3, num_classes=2, variant="m"),
-        "SegFormer_b0": SegFormer(in_channels=3, num_classes=2, variant="b0"),
-        "SegFormer_b1": SegFormer(in_channels=3, num_classes=2, variant="b1"),
-    }
+    import gc
+    model_factories = [
+        ("UNet", lambda: UNet(in_channels=3, num_classes=2, base_channels=32)),
+        ("DLinkNet", lambda: DLinkNet(in_channels=3, num_classes=2)),
+        ("CSNet", lambda: CSNet(in_channels=3, num_classes=2, base_channels=32)),
+        ("BiSeNetV2", lambda: BiSeNetV2(in_channels=3, num_classes=2)),
+        ("DDRNet_slim", lambda: DDRNet(in_channels=3, num_classes=2, variant="slim")),
+        ("DDRNet_std", lambda: DDRNet(in_channels=3, num_classes=2, variant="standard")),
+        ("PIDNet_s", lambda: PIDNet(in_channels=3, num_classes=2, variant="s")),
+        ("PIDNet_m", lambda: PIDNet(in_channels=3, num_classes=2, variant="m")),
+        ("SegFormer_b0", lambda: SegFormer(in_channels=3, num_classes=2, variant="b0")),
+        ("SegFormer_b1", lambda: SegFormer(in_channels=3, num_classes=2, variant="b1")),
+    ]
 
     dummy = torch.randn(1, 3, 64, 64)
-    for name, model in models.items():
+    for name, fn in model_factories:
+        model = fn()
         model.eval()
         with torch.no_grad():
             out = model(dummy)
         assert out.shape == (1, 2, 64, 64), f"Failed for {name}: expected (1, 2, 64, 64), got {out.shape}"
         params_m = sum(p.numel() for p in model.parameters()) / 1e6
         print(f"  [PASS] {name:15s}: Forward shape {tuple(out.shape)} | Params: {params_m:.2f} M")
+        del model
+        gc.collect()
 
 
 def test_metric_accumulator():
@@ -167,9 +172,46 @@ def test_benchmark_training_and_inference():
         print(f"  [PASS] End-to-end Train & Predict: Summary and visual strips generated successfully!")
 
 
+def test_build_model_aliases():
+    """Verify universal build_model factory correctly instantiates all baseline aliases and SOAR variants."""
+    from soar.models import build_model
+    from soar.utils import profile_model, format_latex_row_table2
+
+    aliases = [
+        "unet",
+        "dlinknet",
+        "csnet",
+        "bisenetv2",
+        "ddrnet-slim",
+        "ddrnet-23",
+        "pidnet-s",
+        "pidnet-m",
+        "segformer-b0",
+        "segformer-b1",
+        "soar_nano1",
+        "soar-nano",
+        "soar_medium1",
+    ]
+
+    dummy = torch.randn(1, 3, 64, 64)
+    for alias in aliases:
+        net = build_model(alias, in_channels=3, num_classes=1, verbose=False)
+        with torch.no_grad():
+            out = net(dummy)
+        assert out.shape == (1, 1, 64, 64), f"Failed alias {alias}: got {out.shape}"
+        p, f = profile_model(net, img_size=(64, 64), in_channels=3, device="cpu")
+        row = format_latex_row_table2(alias, p, f, {"iou": 0.75, "dice": 0.85, "boundary_iou": 0.65, "cldice": 0.80, "precision": 0.86, "recall": 0.84})
+        assert "&" in row
+        print(f"  [PASS] Alias '{alias:14s}': Out {tuple(out.shape)} | Params: {p:.2f}M | Table row generated")
+        del net
+        gc.collect()
+
+
 if __name__ == "__main__":
     print("Testing Model Forward Passes...")
     test_model_forward_passes()
+    print("Testing Model Factory Aliases...")
+    test_build_model_aliases()
     print("Testing Benchmark Metric Accumulator...")
     test_metric_accumulator()
     print("Testing End-to-End Training & Inference Pipeline...")

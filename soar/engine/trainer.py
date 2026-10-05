@@ -22,7 +22,14 @@ from ..data.config import PreprocessConfig
 from .validator import BaseValidator
 from ..losses import SegmentationLoss as CompositeSegmentationLoss
 from ..models import SegmentationModel, build_model
-from ..utils import ModelEMA, load_checkpoint, save_checkpoint
+from ..utils import (
+    ModelEMA,
+    load_checkpoint,
+    save_checkpoint,
+    profile_model,
+    format_latex_row_table1,
+    format_latex_row_table2,
+)
 
 
 class BaseTrainer:
@@ -60,6 +67,7 @@ class BaseTrainer:
         balance_sampler: bool = False,
         positive_ratio: float = 0.7,
         sampler_mode: str = "hybrid",
+        loss: str = "soar",
         loss_cfg: Optional[Dict[str, Any]] = None,
         augment: bool = True,
         samples: Optional[int] = None,
@@ -67,7 +75,15 @@ class BaseTrainer:
     ):
 
         self.model_cfg = model_cfg
-        self.loss_cfg = loss_cfg
+        if loss_cfg is None and str(loss).lower() == "standard":
+            self.loss_cfg = {
+                "region": {"type": "dice_bce", "dice_weight": 1.0, "bce_weight": 1.0},
+                "boundary": {"enabled": False},
+                "structure": {"enabled": False},
+            }
+        else:
+            self.loss_cfg = loss_cfg
+        self.loss_type = loss
         self.dataset_cfg = DatasetConfig.resolve(data_root)
         self.data_root = self.dataset_cfg.root_path
         self.img_size = img_size
@@ -150,6 +166,9 @@ class BaseTrainer:
             "cldice": [],
             "lr": [],
         }
+
+        self.best_epoch = 0
+        self.best_metrics: Dict[str, float] = {}
 
         self._setup_directories()
         self._setup_model()
@@ -381,6 +400,7 @@ class BaseTrainer:
                 num_classes=self.num_classes,
                 class_names=self.class_names,
             )
+            self.validator.criterion = self.criterion
             self.validator.dataloader = self.val_loader
             self.validator.val_loader = self.val_loader
         else:
@@ -663,8 +683,114 @@ class BaseTrainer:
             is_best = eval_loss < self.best_loss
             if is_best:
                 self.best_loss = eval_loss
+                self.best_epoch = epoch + 1
+                self.best_metrics = dict(metrics) if metrics else {"loss": eval_loss}
 
             self.save_checkpoint(epoch, eval_loss, is_best)
 
+        if self.rank == 0:
+            self._export_results_summary()
+
         if self.use_ddp:
             dist.destroy_process_group()
+
+    def _export_results_summary(self):
+        """Export epoch history to results.csv, write best_metrics.json, and print LaTeX paper table rows."""
+        import csv
+        import json
+
+        # 1. Export results.csv
+        csv_path = self.checkpoint_dir / "results.csv"
+        fieldnames = [
+            "epoch",
+            "train_loss",
+            "val_loss",
+            "iou",
+            "dice",
+            "precision",
+            "recall",
+            "boundary_iou",
+            "cldice",
+            "lr",
+        ]
+        n_epochs = len(self.history["train_loss"])
+        try:
+            with open(csv_path, mode="w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for i in range(n_epochs):
+                    writer.writerow({
+                        "epoch": i + 1,
+                        "train_loss": f"{self.history['train_loss'][i]:.5f}",
+                        "val_loss": f"{self.history['val_loss'][i]:.5f}" if i < len(self.history["val_loss"]) else "",
+                        "iou": f"{self.history['iou'][i]:.5f}" if i < len(self.history["iou"]) else "",
+                        "dice": f"{self.history['dice'][i]:.5f}" if i < len(self.history["dice"]) else "",
+                        "precision": f"{self.history['precision'][i]:.5f}" if i < len(self.history["precision"]) else "",
+                        "recall": f"{self.history['recall'][i]:.5f}" if i < len(self.history["recall"]) else "",
+                        "boundary_iou": f"{self.history['boundary_iou'][i]:.5f}" if i < len(self.history["boundary_iou"]) else "",
+                        "cldice": f"{self.history['cldice'][i]:.5f}" if i < len(self.history["cldice"]) else "",
+                        "lr": f"{self.history['lr'][i]:.6e}" if i < len(self.history["lr"]) else "",
+                    })
+        except Exception as e:
+            print(f"Notice: Failed to write results.csv ({e})")
+
+        # 2. Profile model params and FLOPs
+        raw_model = self.model.module if self.use_ddp else self.model
+        params_m, flops_g = profile_model(
+            raw_model,
+            img_size=self.img_size,
+            in_channels=self.in_channels,
+            device=str(self.device),
+        )
+
+        # 3. Export best_metrics.json
+        summary_payload = {
+            "model_name": self.model_name,
+            "params_m": params_m,
+            "flops_g": flops_g,
+            "best_epoch": self.best_epoch,
+            "best_loss": self.best_loss,
+            "metrics": self.best_metrics,
+        }
+        json_path = self.checkpoint_dir / "best_metrics.json"
+        try:
+            with open(json_path, "w") as f:
+                json.dump(summary_payload, f, indent=2)
+        except Exception:
+            pass
+
+        # 4. Format LaTeX rows
+        row_table1 = format_latex_row_table1(self.model_name, params_m, flops_g, self.best_metrics)
+        row_table2 = format_latex_row_table2(self.model_name, params_m, flops_g, self.best_metrics)
+
+        # 5. Print formatted summary banner
+        miou_val = self.best_metrics.get("iou", 0.0) * 100.0
+        dice_val = self.best_metrics.get("dice", 0.0) * 100.0
+        biou_val = self.best_metrics.get("boundary_iou", 0.0) * 100.0
+        cldice_val = self.best_metrics.get("cldice", 0.0) * 100.0
+        prec_val = self.best_metrics.get("precision", 0.0) * 100.0
+        rec_val = self.best_metrics.get("recall", 0.0) * 100.0
+
+        print("\n" + "=" * 90)
+        print("SOAR & BENCHMARK SUITE - SCIENTIFIC TRAINING COMPLETE")
+        print(f"Model:           {self.model_name}")
+        print(f"Best Epoch:      {self.best_epoch} / {self.epochs}")
+        print(f"Parameters:      {params_m:.2f} M")
+        print(f"FLOPs ({self.img_size[0]}x{self.img_size[1]}): {flops_g:.2f} G")
+        print("-" * 90)
+        print("Best Validation Metrics:")
+        print(f"  mIoU:          {miou_val:.2f}%")
+        print(f"  Dice:          {dice_val:.2f}%")
+        print(f"  bIoU:          {biou_val:.2f}%")
+        print(f"  clDice:        {cldice_val:.2f}%")
+        print(f"  Precision:     {prec_val:.2f}%")
+        print(f"  Recall:        {rec_val:.2f}%")
+        print(f"  Val Loss:      {self.best_loss:.4f}")
+        print("-" * 90)
+        print("LaTeX Table I (tab:main_benchmark, 1024x1024) Row Ready for Copy-Paste:")
+        print(f"  {row_table1}")
+        print("\nLaTeX Table II (tab:highres_stress, 2048x2048) Row Ready for Copy-Paste:")
+        print(f"  {row_table2}")
+        print(f"\nResults history saved to: {csv_path}")
+        print(f"Best metrics saved to:    {json_path}")
+        print("=" * 90 + "\n")
