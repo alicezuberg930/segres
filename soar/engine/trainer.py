@@ -84,7 +84,7 @@ class BaseTrainer:
         else:
             self.loss_cfg = loss_cfg
         self.loss_type = loss
-        self.dataset_cfg = DatasetConfig.resolve(data_root)
+        self.dataset_cfg = DatasetConfig.resolve(data_root, annotation_file=annotation_file)
         self.data_root = self.dataset_cfg.root_path
         self.img_size = img_size
         if batch_size != 1:

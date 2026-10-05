@@ -171,7 +171,7 @@ def train(args):
     # Resolve dataset to auto-detect number of classes if not given
     cfg = None
     try:
-        cfg = DatasetConfig.resolve(args.data)
+        cfg = DatasetConfig.resolve(args.data, annotation_file=args.annotation_file)
     except Exception:
         pass
 

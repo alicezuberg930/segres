@@ -136,7 +136,11 @@ class DatasetConfig:
         )
 
     @classmethod
-    def resolve(cls, data_input: Union[str, Path]) -> "DatasetConfig":
+    def resolve(
+        cls,
+        data_input: Union[str, Path],
+        annotation_file: Optional[Union[str, Path]] = None,
+    ) -> "DatasetConfig":
         """
         Polymorphic resolver:
         Accepts:
@@ -145,25 +149,87 @@ class DatasetConfig:
         - A path to a raw COCO directory (e.g. MAGFiLO with images and annotations JSON)
         - A path to a plain directory (COCO, polygon, or mask layout)
         """
+        import json
+
         p = Path(data_input).resolve()
 
-        # 1. If it's a YAML file, parse it directly
+        # If path does not exist, check if running in Kaggle and auto-locate matching folder
+        if not p.exists():
+            kaggle_input = Path("/kaggle/input")
+            if kaggle_input.is_dir():
+                target_str = str(data_input).lower()
+                for d in kaggle_input.iterdir():
+                    if not d.is_dir():
+                        continue
+                    # Match dataset name or key parts
+                    if any(part in d.name.lower() for part in ("magfilo", "filament") if part in target_str):
+                        # Try finding image subdirectory inside d
+                        cand = d
+                        for sub in ("images/train", "train", "images", "train/train_images"):
+                            if (d / sub).is_dir():
+                                cand = d / sub
+                                break
+                        if cand.exists():
+                            print(f"[Dataset Resolver] Auto-located dataset in /kaggle/input: '{data_input}' -> '{cand}'")
+                            p = cand.resolve()
+                            break
+
+        if not p.exists():
+            cand_msg = ""
+            kaggle_input = Path("/kaggle/input")
+            if kaggle_input.is_dir():
+                mounted = [d.name for d in kaggle_input.iterdir()]
+                cand_msg = f"\nCurrently mounted in /kaggle/input: {mounted}"
+            raise FileNotFoundError(
+                f"Cannot resolve dataset from path: '{data_input}' (path does not exist on disk).{cand_msg}\n"
+                f"Tip: If running on Kaggle, please ensure the dataset is added to your notebook via '+ Add Input'."
+            )
+
+        # 1. If an explicit annotation file is given, construct DatasetConfig directly
+        if annotation_file is not None and Path(annotation_file).is_file():
+            ann_p = Path(annotation_file).resolve()
+            ann_files = {"train": ann_p, "val": ann_p}
+            try:
+                with open(ann_p, "r", encoding="utf-8") as f:
+                    ann_data = json.load(f)
+                raw_cats = ann_data.get("categories", [])
+                if raw_cats:
+                    sorted_cats = sorted([c for c in raw_cats if "id" in c], key=lambda c: c["id"])
+                    names = {idx: cat.get("name", f"class_{idx}") for idx, cat in enumerate(sorted_cats)}
+                    nc = len(names)
+                else:
+                    nc = 1
+                    names = {0: "filament"}
+            except Exception:
+                nc = 1
+                names = {0: "filament"}
+
+            return cls(
+                root_path=p,
+                train_images=p,
+                val_images=p,
+                nc=nc,
+                names=names,
+                annotation_files=ann_files,
+            )
+
+        # 2. If it's a YAML file, parse it directly
         if p.is_file() and p.suffix.lower() in (".yaml", ".yml"):
             return cls.from_yaml(p)
 
-        # 2. If it's a directory containing data.yaml or dataset.yaml
+        # 3. If it's a directory containing data.yaml or dataset.yaml
         if p.is_dir():
             for candidate in ("data.yaml", "dataset.yaml", "data.yml", "dataset.yml"):
                 yaml_file = p / candidate
                 if yaml_file.is_file():
                     return cls.from_yaml(yaml_file)
 
-            # 3. Auto-discover COCO datasets (e.g. MAGFiLO or MS COCO format)
+            # 4. Auto-discover COCO datasets (e.g. MAGFiLO or MS COCO format)
             coco_cfg = cls._auto_discover_coco(p)
             if coco_cfg is not None:
                 return coco_cfg
 
-            # 4. Fallback: Standard directory structure without YAML
+            # 5. Fallback: Standard directory structure without YAML
             return cls(root_path=p)
 
         raise FileNotFoundError(f"Cannot resolve dataset from path: {data_input}")
