@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Optional, Any, Dict, List, Tuple
 import torch
 import yaml
+if __package__ is None or not __package__:
+    repo_root = Path(__file__).resolve().parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    __package__ = "soar"
 
 from .models import build_model, list_models, SegmentationModel
 from .engine.trainer import BaseTrainer
@@ -139,6 +144,7 @@ def parse_args(raw_args: Optional[List[str]] = None):
     val_parser.add_argument("--annotation-file", type=str, default=None, help="Optional COCO annotation file path")
     val_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
     val_parser.add_argument("--num-classes", type=int, default=None, help="Number of classes (auto-inferred from checkpoint or dataset)")
+    val_parser.add_argument("--split", type=str, default=None, help="Dataset split ('val', 'test', 'train'). Auto-detected if omitted.")
     val_parser.add_argument("--cache-ram", action="store_true", default=False, help="Enable in-memory RAM caching for validation dataset")
 
     # -------------------------------------------------------------
@@ -269,7 +275,16 @@ def validate(args):
         cache_ram=getattr(args, "cache_ram", False),
     )
 
-    validator.setup_data(split="val")
+    split = getattr(args, "split", None)
+    if not split:
+        data_str = str(args.data).lower()
+        ann_str = str(args.annotation_file).lower() if args.annotation_file else ""
+        if "test" in ann_str or "test" in data_str:
+            split = "test"
+        else:
+            split = "val"
+
+    validator.setup_data(split=split)
     validator.validate()
     validator.print_results()
 

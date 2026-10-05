@@ -15,9 +15,8 @@
 \usepackage{microtype}
 \usepackage{bm}
 \usepackage{subcaption}
-\usepackage{tikz}
-\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit, backgrounds, decorations.pathreplacing}
-\usepackage[colorlinks=true,linkcolor=blue!75!black,citecolor=blue!75!black,urlcolor=blue!75!black]{hyperref}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
 
 \linespread{1.15}
 
@@ -69,106 +68,7 @@ Despite dramatic independent progress, deploying deep neural networks to high-re
 
 \begin{figure}[t]
 \centering
-\resizebox{\linewidth}{!}{%
-\begin{tikzpicture}[
-    >=Stealth,
-    font=\scriptsize,
-    input_node/.style={rectangle, draw=gray!70!black, fill=gray!8, rounded corners=3pt, text width=2.1cm, text centered, minimum height=1.15cm, line width=0.8pt},
-    stem_node/.style={rectangle, draw=teal!80!black, fill=teal!10, rounded corners=3pt, text width=2.2cm, text centered, minimum height=1.15cm, line width=0.9pt},
-    bb_node/.style={rectangle, draw=blue!75!black, fill=blue!8, rounded corners=3pt, text width=2.2cm, text centered, minimum height=1.15cm, line width=0.9pt},
-    neck_node/.style={rectangle, draw=orange!80!black, fill=orange!10, rounded corners=3pt, text width=2.2cm, text centered, minimum height=1.15cm, line width=0.9pt},
-    head_node/.style={rectangle, draw=red!75!black, fill=red!10, rounded corners=3pt, text width=2.3cm, text centered, minimum height=1.15cm, line width=1.0pt, font=\scriptsize\bfseries},
-    op_box/.style={rectangle, draw=black!60, fill=white, rounded corners=2pt, text centered, minimum height=0.6cm, inner sep=2.5pt, font=\tiny},
-    circ_op/.style={circle, draw=black!80, fill=yellow!25, inner sep=1.5pt, font=\scriptsize\bfseries},
-    fwd_arrow/.style={draw=black!80, -Stealth, line width=1.0pt},
-    skip_arrow/.style={draw=teal!70!black, -Stealth, line width=1.1pt, dashed},
-    lateral_arrow/.style={draw=orange!80!black, -Stealth, line width=0.9pt}
-]
-    % Top Row: Backbone Stages
-    \node [input_node] (input) at (0, 0) {Input Image $\mathbf{X}$\\$B \times 3 \times H \times W$};
-    \node [stem_node] (stem) at (2.7, 0) {WaveStem ($s2$)\\$16\text{ ch}, \frac{H}{2}\times\frac{W}{2}$\\\textbf{Haar Wavelet DWT}};
-    \node [bb_node] (p2) at (5.5, 0) {Stage 1 ($P_2$, $s4$)\\Down $\to$ LKR ($k=5$)\\$32\text{ ch}, \frac{H}{4}\times\frac{W}{4}$};
-    \node [bb_node] (p3) at (8.3, 0) {Stage 2 ($P_3$, $s8$)\\Down $\to$ LKR ($k=7$)\\$64\text{ ch}, \frac{H}{8}\times\frac{W}{8}$};
-    \node [bb_node] (p4) at (11.1, 0) {Stage 3 ($P_4$, $s16$)\\Down $\to 2\times\text{LKR}$\\$128\text{ ch}, \frac{H}{16}\times\frac{W}{16}$};
-    \node [bb_node] (p5) at (14.0, 0) {Stage 4 ($P_5$, $s32$)\\Down $\to$ LKR $\to$ SpectralCtx\\$256\text{ ch}, \frac{H}{32}\times\frac{W}{32}$};
-
-    % Second Row: Gated Fusion Neck & Head
-    \node [neck_node] (fuse16) at (14.0, -2.0) {Fuse Module ($s16$)\\Gated Convex\\$128\text{ ch}, \frac{H}{16}\times\frac{W}{16}$};
-    \node [neck_node] (fuse8) at (11.1, -2.0) {Fuse Module ($s8$)\\Gated Convex\\$64\text{ ch}, \frac{H}{8}\times\frac{W}{8}$};
-    \node [neck_node] (fuse4) at (8.3, -2.0) {Fuse Module ($s4$)\\Gated Convex\\$32\text{ ch}, \frac{H}{4}\times\frac{W}{4}$};
-    \node [neck_node] (agg) at (5.5, -2.0) {Multi-Scale Agg ($s4$)\\Cross-Scale Fusion\\$32\text{ ch}, \frac{H}{4}\times\frac{W}{4}$};
-    \node [neck_node] (fuse2) at (2.7, -2.0) {Gated Fuse ($s2$)\\Wave-Stem Skip\\$16\text{ ch}, \frac{H}{2}\times\frac{W}{2}$};
-    \node [head_node] (head) at (0, -2.0) {SegHead ($s2 \to s1$)\\PixelShuffle ($r=2$)\\Focal Bias $\pi=0.01$\\$\mathbf{Z} \in \mathbb{R}^{B \times C \times H \times W}$};
-
-    % Forward Backbone Connections
-    \draw [fwd_arrow] (input) -- (stem);
-    \draw [fwd_arrow] (stem) -- (p2);
-    \draw [fwd_arrow] (p2) -- (p3);
-    \draw [fwd_arrow] (p3) -- (p4);
-    \draw [fwd_arrow] (p4) -- (p5);
-
-    % Top-Down Neck Connections
-    \draw [fwd_arrow] (p5) -- (fuse16);
-    \draw [lateral_arrow] (p4) -- (fuse16);
-    \draw [fwd_arrow] (fuse16) -- (fuse8);
-    \draw [lateral_arrow] (p3) -- (fuse8);
-    \draw [fwd_arrow] (fuse8) -- (fuse4);
-    \draw [lateral_arrow] (p2) -- (fuse4);
-    \draw [fwd_arrow] (fuse4) -- (agg);
-    \draw [fwd_arrow] (agg) -- (fuse2);
-
-    % High-Resolution Detail Skip from WaveStem to Stride s2 Fuse
-    \draw [skip_arrow] (stem) -- (fuse2) node[midway, left, font=\tiny\bfseries, text=teal!80!black] {Wave-Skip ($s2$)};
-    \draw [fwd_arrow] (fuse2) -- (head);
-
-    % Background Scope Framing
-    \begin{scope}[on background layer]
-        \node [draw=blue!50!black, fill=blue!2, dashed, rounded corners=5pt, line width=0.6pt, fit=(p2) (p5), label={[font=\scriptsize\bfseries, text=blue!80!black, anchor=north west]north west:Large-Kernel Residual (LKR) Backbone ($s2 \to s32$)}] {};
-        \node [draw=orange!60!black, fill=orange!2, dashed, rounded corners=5pt, line width=0.6pt, fit=(fuse16) (fuse2), label={[font=\scriptsize\bfseries, text=orange!80!black, anchor=south east]south east:Gated Convex Cross-Resolution Neck ($s32 \to s2$)}] {};
-    \end{scope}
-
-    % Micro Inset (a): Large-Kernel Residual (LKR) Block
-    \node [anchor=west, font=\scriptsize\bfseries, text=blue!85!black] at (-0.2, -3.4) {(a) Large-Kernel Residual (LKR) Unit};
-    \node [op_box] (lkr_in) at (0.5, -4.1) {$X \in \mathbb{R}^{B \times C \times H \times W}$};
-    \node [op_box, right=0.25cm of lkr_in] (lkr_dw) {DWConv $k\times k$\\$k \in \{5, 7\}$};
-    \node [op_box, right=0.25cm of lkr_dw] (lkr_gn1) {GroupNorm\\SiLU};
-    \node [op_box, right=0.25cm of lkr_gn1] (lkr_pw1) {PWConv $1\times 1$\\$e=2.0$, SiLU};
-    \node [op_box, right=0.25cm of lkr_pw1] (lkr_pw2) {PWConv $1\times 1$\\Project to $C$};
-    \node [op_box, right=0.25cm of lkr_pw2] (lkr_scale) {GN $\times \gamma$\\($\gamma \leftarrow 0$ init)};
-    \node [circ_op, right=0.3cm of lkr_scale] (lkr_add) {$\bm{+}$};
-    \node [op_box, right=0.3cm of lkr_add] (lkr_out) {$\text{LKR}(X) = X + \gamma Y$};
-
-    \draw [fwd_arrow] (lkr_in) -- (lkr_dw);
-    \draw [fwd_arrow] (lkr_dw) -- (lkr_gn1);
-    \draw [fwd_arrow] (lkr_gn1) -- (lkr_pw1);
-    \draw [fwd_arrow] (lkr_pw1) -- (lkr_pw2);
-    \draw [fwd_arrow] (lkr_pw2) -- (lkr_scale);
-    \draw [fwd_arrow] (lkr_scale) -- (lkr_add);
-    \draw [fwd_arrow] (lkr_add) -- (lkr_out);
-    \draw [draw=blue!70!black, -Stealth, line width=0.9pt] (lkr_in.north) -- ++(0, 0.3) -| (lkr_add.north) node[pos=0.25, above, font=\tiny\bfseries, text=blue!80!black] {Identity Shortcut};
-
-    % Micro Inset (b): Gated Convex Cross-Resolution Fusion
-    \node [anchor=west, font=\scriptsize\bfseries, text=orange!85!black] at (9.2, -3.4) {(b) Gated Convex Cross-Resolution Fusion (\texttt{Fuse})};
-    \node [op_box] (fuse_skip) at (9.8, -3.8) {$X_{\text{skip}}$ ($s2$)\\$\text{CBA}_{1\times 1} \to A$};
-    \node [op_box] (fuse_low) at (9.8, -4.5) {$X_{\text{low}}$ ($s4$)\\$\mathcal{U} \circ \text{CBA} \to B$};
-    
-    \node [circ_op] (fuse_sum) at (11.5, -4.15) {$\bm{+}$};
-    \node [op_box, right=0.25cm of fuse_sum] (fuse_gate) {DWConv $3\times 3$\\$\sigma(\cdot) \to G \in [0, 1]$};
-    \node [op_box, right=0.3cm of fuse_gate] (fuse_blend) {Convex Blend\\$G \odot A + (1 - G) \odot B$};
-    \node [op_box, right=0.3cm of fuse_blend] (fuse_out) {$\text{CBA}_{1\times 1}$\\Output};
-
-    \draw [fwd_arrow] (fuse_skip.east) -| (fuse_sum.north);
-    \draw [fwd_arrow] (fuse_low.east) -| (fuse_sum.south);
-    \draw [fwd_arrow] (fuse_sum) -- (fuse_gate);
-    \draw [fwd_arrow] (fuse_gate) -- (fuse_blend);
-    \draw [fwd_arrow] (fuse_blend) -- (fuse_out);
-
-    \begin{scope}[on background layer]
-        \node [draw=blue!60!black, fill=blue!1, rounded corners=4pt, line width=0.5pt, fit=(lkr_in) (lkr_out) (lkr_dw) (lkr_scale)] {};
-        \node [draw=orange!60!black, fill=orange!1, rounded corners=4pt, line width=0.5pt, fit=(fuse_skip) (fuse_low) (fuse_out) (fuse_gate)] {};
-    \end{scope}
-\end{tikzpicture}%
-}
+\includegraphics[width=\linewidth]{figures/soar_architecture.png}
 \caption{Comprehensive Architectural Framework of the SOAR Baseline. Sub-pixel high-frequency spatial gradients are captured at native stride $s2$ by the zero-aliasing Wavelet Stem (\texttt{WaveStem}) and routed through a dedicated detail highway. Coarse contextual semantics are aggregated down to stride $s32$ via Large-Kernel Residual (LKR) depthwise blocks with zero-initialized Group Normalization ($\gamma \leftarrow 0$), augmented by global spectral context (\texttt{SpectralCtx}). The top-down Gated Convex Cross-Resolution Fusion (\texttt{Fuse}) neck dynamically interpolates spatial detail and semantic abstraction via continuous combination fields $G(u, v) \in [0, 1]$. Sub-pixel periodic shuffling (\texttt{SegHead}) directly synthesizes full-resolution logits ($s2 \to s1$) without bilinear interpolation blur.}
 \label{fig:architecture}
 \end{figure}

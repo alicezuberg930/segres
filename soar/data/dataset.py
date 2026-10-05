@@ -197,6 +197,15 @@ class SegmentationDataset(Dataset):
         if self._explicit_image_dir and self._explicit_image_dir.is_dir():
             return self._explicit_image_dir
 
+        # 1. If data_root itself is already a direct directory containing images
+        if self.data_root.is_dir():
+            has_images = any(
+                any(self.data_root.glob(f"*{ext}"))
+                for ext in self.SUPPORTED_EXTENSIONS
+            )
+            if has_images:
+                return self.data_root
+
         sub = self.split
         sub_aliases = [sub]
         if sub in ("val", "valid", "validation"):
@@ -220,12 +229,41 @@ class SegmentationDataset(Dataset):
             self.data_root,
         ])
 
+        # Check 1 level of subdirectories in data_root in case of nested archive extraction
+        if self.data_root.is_dir():
+            try:
+                for sub_dir in [d for d in self.data_root.iterdir() if d.is_dir()]:
+                    for s in sub_aliases:
+                        candidate_paths.extend([
+                            sub_dir / "images" / s,
+                            sub_dir / s / "images",
+                            sub_dir / s / f"{s}_images",
+                            sub_dir / f"{s}_images",
+                            sub_dir / s,
+                        ])
+            except Exception:
+                pass
+
         for path in candidate_paths:
             if path.is_dir() and any(path.iterdir()):
                 return path
         for path in candidate_paths:
             if path.is_dir():
                 return path
+
+        # Recursive fallback search for directory with split name containing images
+        if self.data_root.is_dir():
+            try:
+                for p in self.data_root.glob(f"**/*{sub}*"):
+                    if p.is_dir():
+                        has_imgs = any(
+                            any(p.glob(f"*{ext}"))
+                            for ext in self.SUPPORTED_EXTENSIONS
+                        )
+                        if has_imgs:
+                            return p
+            except Exception:
+                pass
 
         raise FileNotFoundError(
             f"Could not locate image directory for split '{self.split}'. Checked: {candidate_paths}"
