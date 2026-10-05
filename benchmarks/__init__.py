@@ -10,6 +10,7 @@ from .bisenetv2 import BiSeNetV2
 from .ddrnet import DDRNet, DDRNet23
 from .pidnet import PIDNet
 from .segformer import SegFormer
+from .isdnet import ISDNet
 
 def _build_pidnet_s(in_channels: int = 3, num_classes: int = 1, **kwargs) -> PIDNet:
     return PIDNet(in_channels=in_channels, num_classes=num_classes, variant="s", **kwargs)
@@ -64,6 +65,8 @@ BENCHMARK_MODELS: Dict[str, Any] = {
     "segformer_b0": _build_segformer_b0,
     "segformer-b1": _build_segformer_b1,
     "segformer_b1": _build_segformer_b1,
+    "isdnet": ISDNet,
+    "isd-net": ISDNet,
 }
 
 
@@ -78,6 +81,7 @@ def list_benchmark_models() -> List[str]:
         "ddrnet-23",
         "pidnet-s",
         "pidnet-m",
+        "isdnet",
         "segformer-b0",
         "segformer-b1",
     ]
@@ -105,6 +109,7 @@ __all__ = [
     "DDRNet",
     "DDRNet23",
     "PIDNet",
+    "ISDNet",
     "SegFormer",
     "BENCHMARK_MODELS",
     "list_benchmark_models",

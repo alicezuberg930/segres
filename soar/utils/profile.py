@@ -131,6 +131,8 @@ def get_latex_model_name(model_name: str) -> str:
         return r"SegFormer-B0 \cite{xie2021segformer}"
     elif "segformerb1" in k:
         return r"SegFormer-B1 \cite{xie2021segformer}"
+    elif "isdnet" in k:
+        return r"ISDNet \cite{guo2022isdnet}"
     return model_name
 
 
@@ -236,4 +238,79 @@ def format_latex_row_table2(
 
 # Backward-compatible alias
 format_latex_row_table3 = format_latex_row_table2
+
+
+def format_latex_row_table_eval(
+    model_name: str,
+    metrics: Dict[str, Any],
+    dataset: Optional[str] = None,
+) -> str:
+    """Format row for Table 3 (tab:results_1024) and Table 4 (tab:results_2048):
+    Model & DeepGlobe (mIoU, bIoU, clDice) & CRACK500 (mIoU, bIoU, clDice) & MAGFiLO (mIoU, bIoU, clDice) \\
+    """
+    # Use clean model display name (e.g. U-Net, BiSeNet V2, PIDNet-S, ISDNet, SegFormer-B0, SOAR1-Nano1, etc.)
+    k = model_name.lower().replace("-", "").replace("_", "")
+    if "soarnano" in k:
+        name_str = "SOAR1-Nano1"
+    elif "soarsmall" in k:
+        name_str = "SOAR1-Small1"
+    elif "soarmedium" in k or k == "soar":
+        name_str = "SOAR1-Medium1"
+    elif "unet" in k:
+        name_str = "U-Net"
+    elif "bisenet" in k:
+        name_str = "BiSeNet V2"
+    elif "pidnet" in k:
+        name_str = "PIDNet-S"
+    elif "isdnet" in k:
+        name_str = "ISDNet"
+    elif "segformer" in k:
+        name_str = "SegFormer-B0"
+    else:
+        name_str = model_name
+
+    dg_m, cr_m, mg_m = None, None, None
+    if isinstance(metrics, dict) and any(k in metrics for k in ("deepglobe", "crack500", "magfilo")):
+        dg_m = metrics.get("deepglobe")
+        cr_m = metrics.get("crack500")
+        mg_m = metrics.get("magfilo")
+    elif dataset:
+        ds_k = dataset.lower()
+        if "deepglobe" in ds_k or "road" in ds_k:
+            dg_m = metrics
+        elif "crack" in ds_k:
+            cr_m = metrics
+        elif "magfilo" in ds_k or "filament" in ds_k:
+            mg_m = metrics
+    else:
+        dg_m = metrics
+
+    dg_iou, dg_bnd, dg_cl = _format_tri_metrics(dg_m)
+    cr_iou, cr_bnd, cr_cl = _format_tri_metrics(cr_m)
+    mg_iou, mg_bnd, mg_cl = _format_tri_metrics(mg_m)
+
+    return (
+        f"{name_str}\n"
+        f"& {dg_iou} & {dg_bnd} & {dg_cl} "
+        f"& {cr_iou} & {cr_bnd} & {cr_cl} "
+        f"& {mg_iou} & {mg_bnd} & {mg_cl} \\\\"
+    )
+
+
+def compute_resolution_retention(
+    m_1024: float,
+    m_2048: float,
+) -> Tuple[float, float]:
+    """Compute degradation Delta M = M_2048 - M_1024 and retention R_M = (M_2048 / M_1024) * 100%."""
+    delta_m = m_2048 - m_1024
+    retention_pct = (m_2048 / m_1024 * 100.0) if m_1024 > 1e-6 else 0.0
+    return delta_m, retention_pct
+
+
+def compute_macro_average(metric_values: List[float]) -> float:
+    """Compute unweighted macro-average M_bar = (1/N) * sum(M_d)."""
+    if not metric_values:
+        return 0.0
+    return sum(metric_values) / len(metric_values)
+
 

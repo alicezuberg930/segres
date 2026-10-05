@@ -20,6 +20,7 @@ from benchmarks import (
     BiSeNetV2,
     DDRNet,
     PIDNet,
+    ISDNet,
     SegFormer,
 )
 
@@ -40,6 +41,7 @@ def test_model_forward_passes():
         ("DDRNet_std", lambda: DDRNet(in_channels=3, num_classes=2, variant="standard")),
         ("PIDNet_s", lambda: PIDNet(in_channels=3, num_classes=2, variant="s")),
         ("PIDNet_m", lambda: PIDNet(in_channels=3, num_classes=2, variant="m")),
+        ("ISDNet", lambda: ISDNet(in_channels=3, num_classes=2)),
         ("SegFormer_b0", lambda: SegFormer(in_channels=3, num_classes=2, variant="b0")),
         ("SegFormer_b1", lambda: SegFormer(in_channels=3, num_classes=2, variant="b1")),
     ]

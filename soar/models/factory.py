@@ -15,6 +15,7 @@ from benchmarks import (
     DDRNet,
     PIDNet,
     SegFormer,
+    ISDNet,
     BENCHMARK_MODELS,
     list_benchmark_models,
 )

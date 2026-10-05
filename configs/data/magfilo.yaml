@@ -1,0 +1,16 @@
+# MAGFiLO Micro-Filament Dataset Configuration
+path: data/magfilo    # root path to dataset
+train: images/train   # train images folder or train.txt
+val: images/val       # val images folder or val.txt
+test: images/test     # test images folder or test.txt (optional)
+
+# Classes
+nc: 1
+names:
+  0: filament
+
+# Mask directories (standard 1-channel binary masks)
+masks:
+  train: masks/train
+  val: masks/val
+  test: masks/test

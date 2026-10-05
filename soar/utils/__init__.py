@@ -11,6 +11,9 @@ from .profile import (
     format_latex_row_table1,
     format_latex_row_table2,
     format_latex_row_table3,
+    format_latex_row_table_eval,
+    compute_resolution_retention,
+    compute_macro_average,
 )
 
 __all__ = [
@@ -29,4 +32,7 @@ __all__ = [
     "format_latex_row_table1",
     "format_latex_row_table2",
     "format_latex_row_table3",
+    "format_latex_row_table_eval",
+    "compute_resolution_retention",
+    "compute_macro_average",
 ]

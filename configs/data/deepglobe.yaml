@@ -1,0 +1,16 @@
+# DeepGlobe Road Extraction Dataset Configuration
+path: data/deepglobe  # root path to dataset
+train: images/train   # train images folder or train.txt
+val: images/val       # val images folder or val.txt
+test: images/test     # test images folder or test.txt (optional)
+
+# Classes
+nc: 1
+names:
+  0: road
+
+# Mask directories (standard 1-channel binary masks)
+masks:
+  train: masks/train
+  val: masks/val
+  test: masks/test

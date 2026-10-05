@@ -348,181 +348,650 @@ SOAR couples sub-pixel mask supervision with anchor-free detection heads:
 \end{equation}
 utilizing the Task-Aligned Assigner (TAL) \cite{feng2021tood} for dynamic positive anchor selection, enabling seamless ingestion of both standardized \texttt{data.yaml} datasets and MS COCO polygon coordinates.
 
-\section{Experimental Evaluation: Benchmark Blueprint}
+\section{Experimental Evaluation}
 
-\subsection{Model Scaling and Baseline Selection}
-To rigorously evaluate SOAR across diverse operational envelopes without succumbing to combinatorial baseline sprawl, we curate four premier architectural paradigms spanning classical curvilinear extractors, bilateral edge segmenters, boundary specialists, and modern hierarchical transformers:
-\begin{enumerate}
-    \item \textbf{Classical Curvilinear \& Topology-Aware Structural Networks}: \textit{U-Net} \cite{ronneberger2015u} serves as the canonical encoder-decoder baseline equipped with long-range identity skip connections, which remains the premier standard for tubular biomedical structure extraction and thin curvilinear segmentation.
-    \item \textbf{Real-Time Dual-Resolution / Edge CNNs}: We evaluate \textit{BiSeNet V2} \cite{yu2021bisenet}, which routes spatial detail and contextual semantics along bilateral pathways, and \textit{PIDNet-S} \cite{xu2023pidnet}, which models boundary tracking through an explicit three-branch Proportional-Integral-Derivative feedback controller.
-    \item \textbf{High-Resolution Boundary Refinement Specialists}: \textit{ISDNet} \cite{guo2022isdnet} integrates an extremely shallow full-resolution branch with a deeply downsampled contextual backbone, specifically addressing ultra-high-resolution boundary ambiguity.
-    \item \textbf{Modern Vision Transformers}: \textit{SegFormer-B0} \cite{xie2021segformer} represents state-of-the-art efficiency in hierarchical vision transformers, utilizing a multi-scale overlap patch embedding with a lightweight all-MLP decoding head.
-    \item \textbf{Proposed SOAR Architecture Family}: We benchmark three distinct tiers of the proposed framework: \textbf{SOAR1-Nano1} ($0.85\text{ M}$ parameters, $7.06\text{ G}$ FLOPs at $1024^2$), \textbf{SOAR1-Small1} ($2.69\text{ M}$ parameters, $19.00\text{ G}$ FLOPs), and \textbf{SOAR1-Medium1} ($6.45\text{ M}$ parameters, $44.38\text{ G}$ FLOPs), constructed strictly through the unified WaveStem, LKR, SpectralCtx, Gated Convex Fusion, and sub-pixel PixelShuffle pipeline.
-\end{enumerate}
+The experimental study is designed to answer a focused research question: 
+\emph{whether SOAR can preserve segmentation quality for thin, elongated, and 
+topology-sensitive structures when operating directly at high spatial 
+resolutions across substantially different visual domains.}
 
-\subsection{Unified Experimental Setup}
-\textbf{Unified Training Protocol Under SOAR Loss:} In high-resolution curvilinear and geometry-critical vision, benchmarking models under disparate loss functions (such as naive cross-entropy or plain Dice) introduces severe optimization bias and foreground gradient swamping. To establish absolute experimental fairness and isolate the neural architecture as the sole independent variable, \textbf{every network across our benchmark suite (both all baseline architectures and SOAR variants) is trained from scratch strictly under the exact same loss function: the unified SOAR Tri-Domain High-Resolution Loss ($\mathcal{L}_{\text{SOAR}}$, Eq.~\eqref{eq:soar_loss})}:
-\begin{equation}
-\label{eq:unified_loss}
-\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{SOAR}} = \mathcal{L}_{\text{region}} + \lambda_{\text{bnd}} \mathcal{L}_{\text{boundary}} + \lambda_{\text{cldice}}(e) \mathcal{L}_{\text{clDice}}
-\end{equation}
-By subjecting all competing architectures to this identical, geometry-preserving objective from epoch zero, every network benefits equally from balanced foreground-background gradients ($\mathcal{L}_{\text{region}}$), high-frequency boundary sharpening ($\mathcal{L}_{\text{boundary}}$), and differentiable skeleton topology supervision ($\mathcal{L}_{\text{clDice}}$). Consequently, there are no confounding experiments or ablations comparing alternative loss functions; all empirical performance margins across region overlap (mIoU), boundary fidelity (bIoU), and topological continuity (clDice) reflect purely the architectural capabilities of the models (i.e., lossless Haar WaveStem frequency preservation, wide-field LKR receptive fields, global spectral context, gated convex fusion, and direct sub-pixel periodic shuffling).
+Rather than optimizing for an exhaustive comparison with a large number of 
+architectures, we evaluate SOAR on three representative segmentation 
+problems: road-network extraction, pavement-crack segmentation, and 
+micro-filament segmentation. These datasets provide progressively more 
+challenging structural characteristics, ranging from relatively wide and 
+continuous road networks to extremely sparse and narrow micro-filaments.
 
-\textbf{Optimization Dynamics \& Hardware Constraints:} All models are trained with micro-batch size $B=1$ under gradient accumulation steps $\kappa = 4$ (effective batch size 4), reflecting realistic edge training budgets on a single commercial 16GB GPU (NVIDIA RTX 4090 / Tesla T4). We employ the AdamW optimizer with weight decay $10^{-4}$, initial learning rate $\eta_0 = 10^{-3}$, and a cosine annealing learning rate schedule decaying to $10^{-6}$ over 50 epochs, preceded by a 5-epoch linear warmup. Forward and backward passes execute under FP16 Automatic Mixed Precision (AMP).
+Two input resolutions are considered throughout the study, namely 
+$1024\times1024$ and $2048\times2048$. The former represents a practical 
+high-resolution operating point, while the latter evaluates the ability of 
+the architecture to process multi-megapixel images without reducing the 
+input to conventional low-resolution settings. The evaluation is deliberately 
+restricted to these two resolutions because the objective is to study 
+high-resolution behavior under a realistic memory-constrained training 
+environment.
 
-\textbf{Evaluation Benchmark Datasets:} Evaluation is conducted across three challenging high-resolution domains characterized by severe topological fragility and background sparsity:
+\subsection{Research Questions}
+
+The experiments are organized around the following research questions.
+
 \begin{itemize}
-    \item \textbf{DeepGlobe Road Extraction} ($1024\times 1024$): Remote sensing satellite imagery comprising continuous road network graphs traversing complex rural and urban land cover.
-    \item \textbf{CRACK500 Infrastructure Fracture Dataset} ($1024\times 1024$): High-resolution civil infrastructure pavement imagery containing multi-scale structural fractures with noisy textures.
-    \item \textbf{MAGFiLO Micro-Filamentous Material Dataset} ($1024\times 1024$): High-resolution scanning electron microscopy depicting synthetic carbon-fiber micro-filaments (1--3 pixel physical widths) exhibiting extreme foreground sparsity ($<0.5\%$ target pixels).
-    \item \textbf{Native Ultra-High-Resolution Gigapixel Manifolds} ($2048\times 2048$): Multi-megapixel industrial inspection manifolds for sub-pixel boundary and memory stress testing.
+
+    \item \textbf{RQ1 -- Cross-domain segmentation capability:}
+    Can SOAR accurately segment thin and elongated structures across 
+    substantially different image domains, including satellite road networks,
+    pavement cracks, and microscopic filaments?
+
+    \item \textbf{RQ2 -- High-resolution scalability:}
+    Does SOAR maintain segmentation quality when the input resolution is 
+    increased from $1024\times1024$ to $2048\times2048$?
+
+    \item \textbf{RQ3 -- Boundary and topology preservation:}
+    Does the resolution-preserving design provide measurable advantages for 
+    boundary fidelity and structural connectivity in addition to conventional 
+    region-overlap accuracy?
+
+    \item \textbf{RQ4 -- Capacity versus high-resolution performance:}
+    How does increasing the SOAR model capacity affect segmentation quality 
+    across the three domains under the same high-resolution training protocol?
+
 \end{itemize}
 
-\textbf{Evaluation Metrics:} Segmentation quality is evaluated across three complementary mathematical criteria: (i) \textbf{Mean Intersection-over-Union (mIoU, \%)} for global region overlap; (ii) \textbf{Boundary IoU (bIoU, \%)} \cite{cheng2021boundary} with error margin $d=2$ pixels for sub-pixel contour fidelity; and (iii) \textbf{Centerline Dice (clDice, \%)} \cite{shit2021cldice} computed over iteratively extracted morphological skeletons to quantify topological connectivity without penalizing boundary variations. Computational efficiency is profiled via Parameters (M), multiply-accumulate FLOPs (G), Peak VRAM during training and inference (MB), per-frame latency (ms), and frame throughput (FPS).
 
-\subsection{Quantitative Benchmark on High-Resolution Manifolds ($1024\times 1024$)}
-Table~\ref{tab:main_benchmark} details the comprehensive performance comparison across all three heterogeneous domains—DeepGlobe (Road Networks), CRACK500 (Pavement Cracks), and MAGFiLO (Micro-Filaments)—at $1024\times 1024$ resolution under the unified SOAR loss protocol. For each domain, we report region overlap (mIoU), boundary contour fidelity (bIoU), and topological continuity (clDice).
+\subsection{Datasets}
 
-Classical U-Net \cite{ronneberger2015u} maintains moderate topological preservation due to its full-resolution feature skips, but incurs prohibitive computational burden ($218.4\text{ G}$ FLOPs, $17.27\text{ M}$ parameters), yielding low throughput on embedded devices. Real-time bilateral networks (BiSeNet V2 \cite{yu2021bisenet}, PIDNet-S \cite{xu2023pidnet}) dramatically reduce latency and VRAM footprint; however, their downsampling stems and subsequent bilinear decoding induce boundary blurring that fractures delicate filaments, capping bIoU and clDice. ISDNet \cite{guo2022isdnet} achieves sharp edges through its shallow path, but requires heavy dual-stream memory traffic. SegFormer-B0 \cite{xie2021segformer} provides compact transformer representation ($3.75\text{ M}$ parameters) but struggles with high-frequency spatial localization on $1024^2$ grids due to patch token compression.
+We evaluate SOAR on three publicly available or project-defined 
+high-resolution segmentation domains selected for their complementary 
+geometric characteristics.
 
-In contrast, the SOAR family establishes a superior Pareto efficiency envelope across all three domains: \textbf{SOAR1-Nano1} achieves comparable or superior receptive coverage at a fraction of the parameter cost ($0.85\text{ M}$ vs.\ $17.27\text{ M}$ for U-Net) and only $7.06\text{ G}$ FLOPs ($>30\times$ fewer than U-Net and $>6\times$ fewer than PIDNet-S), while \textbf{SOAR1-Small1} ($2.69\text{ M}$, $19.00\text{ G}$) and \textbf{SOAR1-Medium1} ($6.45\text{ M}$, $44.38\text{ G}$) scale capacity for dense geometry extraction with deterministic real-time frame rates ($>60\text{ FPS}$).
+\subsubsection{DeepGlobe Road Extraction}
+
+The DeepGlobe Road Extraction dataset represents long-range, 
+topologically connected structures in satellite imagery. Roads may extend 
+across large portions of the image while exhibiting substantial variation 
+in width, appearance, illumination, and surrounding land cover. The dataset 
+therefore primarily evaluates the ability of the model to preserve 
+long-range structural continuity rather than only local boundaries.
+
+For the high-resolution experiments, images are evaluated at 
+$1024\times1024$ and $2048\times2048$ whenever the corresponding spatial 
+content is available. No additional low-resolution benchmark is introduced.
+
+\subsubsection{CRACK500}
+
+CRACK500 contains pavement images with structural cracks exhibiting large 
+variations in width, orientation, texture, and contrast. Compared with road 
+extraction, crack segmentation presents a more localized boundary problem, 
+where small discontinuities and visually similar background structures can 
+lead to fragmented predictions.
+
+The dataset is therefore used to evaluate whether SOAR can preserve 
+fine-scale crack boundaries while maintaining sufficient regional 
+segmentation accuracy.
+
+\subsubsection{MAGFiLO}
+
+MAGFiLO represents the most spatially demanding domain considered in this 
+study. The target structures are micro-filamentary patterns with extremely 
+small foreground occupancy and very narrow physical widths. In this setting,
+a small spatial localization error can remove a substantial portion of the 
+target structure or break an otherwise continuous filament.
+
+MAGFiLO consequently provides the strongest test of the proposed 
+resolution-preserving representation, particularly with respect to boundary 
+fidelity and topology.
 
 \begin{table}[t]
 \centering
-\caption{Comprehensive High-Resolution Benchmark ($1024\times 1024$) Across Heterogeneous Visual Domains Under Unified SOAR Loss Protocol ($\mathcal{L}_{\text{SOAR}}$, $B=1$, FP16 AMP). Empirical metric entries represent the experimental blueprint awaiting execution.}
-\label{tab:main_benchmark}
-\setlength{\tabcolsep}{3.8pt}
+\caption{Summary of the three evaluation domains.}
+\label{tab:datasets}
+\setlength{\tabcolsep}{6pt}
 \renewcommand{\arraystretch}{1.15}
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{llccccccccccc}
+\begin{tabular}{lll}
 \toprule
-\multirow{2}{*}{\textbf{Architectural Paradigm}} & \multirow{2}{*}{\textbf{Model Architecture}} & \multirow{2}{*}{\textbf{\shortstack{Params\\(M)}}} & \multirow{2}{*}{\textbf{\shortstack{FLOPs\\(G)}}} & \multirow{2}{*}{\textbf{FPS}} & \multicolumn{3}{c}{\textbf{DeepGlobe (Road Networks)}} & \multicolumn{3}{c}{\textbf{CRACK500 (Pavement Cracks)}} & \multicolumn{3}{c}{\textbf{MAGFiLO (Micro-Filaments)}} \\
-\cmidrule(lr){6-8} \cmidrule(lr){9-11} \cmidrule(lr){12-14}
-& & & & & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} \\
+\textbf{Dataset} &
+\textbf{Target Structure} &
+\textbf{Primary Challenge} \\
 \midrule
-Curvilinear / Topology & U-Net \cite{ronneberger2015u} & 17.27 & 218.4 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-\midrule
-\multirow{2}{*}{Real-Time Dual-Resolution} & BiSeNet V2 \cite{yu2021bisenet} & 3.42 & 21.2 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& PIDNet-S \cite{xu2023pidnet} & 7.62 & 47.8 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-\midrule
-High-Resolution Specialist & ISDNet \cite{guo2022isdnet} & 18.30 & 58.6 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-\midrule
-Vision Transformer & SegFormer-B0 \cite{xie2021segformer} & 3.75 & 28.4 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-\midrule
-\multirow{3}{*}{\textbf{SOAR Family (Ours)}} & \textbf{SOAR1-Nano1} & \textbf{0.85} & \textbf{7.06} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& \textbf{SOAR1-Small1} & 2.69 & 19.00 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& \textbf{SOAR1-Medium1} & 6.45 & 44.38 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+DeepGlobe &
+Road networks &
+Long-range connectivity and complex background \\
+CRACK500 &
+Pavement cracks &
+Fine boundaries and fragmented structures \\
+MAGFiLO &
+Micro-filaments &
+Extreme sparsity and narrow structures \\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
 
-\subsection{Native $2048\times 2048$ Ultra-High-Resolution Stress Benchmark}
-When scaling from $1024\times 1024$ to native $2048\times 2048$ multi-megapixel manifolds ($4.19\times 10^6$ pixels per image), deep vision architectures hit a severe \textbf{Memory Wall}. Conventional feature maps at early stages consume immense activation memory, frequently triggering Out-Of-Memory (OOM) fatal aborts or catastrophic memory thrashing on 16GB GPUs under $B=1$. Furthermore, the physical width of target filaments drops to $0.05\%\text{--}0.1\%$ of the spatial canvas, making topological continuity (clDice) exceptionally vulnerable to downsampling-induced disconnection.
 
-Table~\ref{tab:highres_stress} outlines the native $2048\times 2048$ stress benchmark evaluated across all three domains: DeepGlobe, CRACK500, and MAGFiLO. Traditional models encounter severe degradation: U-Net suffers extreme VRAM allocation ($>12\text{ GB}$) and latency spikes due to multi-scale high-resolution tensor concatenations; SegFormer-B0 experiences quadratic spatial attention bottlenecks in early self-attention stages; and BiSeNet V2 exhibits severe boundary disintegration. In contrast, SOAR exploits its lossless Haar WaveStem decomposition to ingest $2048\times 2048$ inputs directly into $1024\times 1024$ 4-channel wavebands with zero parameter overhead, coupled with Consumer-Counted Eager Memory Deallocation to maintain a lean memory footprint. This architecture guarantees non-saturating VRAM and robust topological preservation across all three imaging domains without spatial downsampling artifacts.
+\subsection{Experimental Resolutions}
+
+The experiments are conducted at two spatial resolutions:
+
+\begin{equation}
+\mathcal{R} = \left\{1024\times1024,\;2048\times2048\right\}.
+\end{equation}
+
+The $1024\times1024$ setting evaluates the standard high-resolution operating 
+point used for the primary cross-model comparison. The $2048\times2048$ 
+setting increases the number of input pixels by a factor of four:
+
+\begin{equation}
+\frac{2048^2}{1024^2}=4.
+\end{equation}
+
+Consequently, the second setting substantially increases activation memory 
+and computational requirements without changing the model architecture.
+
+Importantly, the $2048\times2048$ experiment is performed using the image 
+at its full evaluation resolution rather than reducing the image to 
+$512\times512$ or another conventional network input size. This distinction 
+is essential to the objective of the study: the experiment evaluates the 
+behavior of the model on a genuinely high-resolution spatial manifold 
+rather than evaluating a low-resolution representation of a high-resolution 
+image.
+
+
+\subsection{Compared Models}
+
+The comparison includes representative convolutional segmentation 
+architectures together with three capacity levels of SOAR.
+
+The selected baselines cover different architectural strategies:
+
+\begin{itemize}
+
+    \item \textbf{U-Net} represents the conventional encoder-decoder 
+    architecture with symmetric skip connections and serves as the 
+    classical reference model.
+
+    \item \textbf{BiSeNet V2} represents lightweight bilateral 
+    high-resolution segmentation with separate spatial and semantic 
+    pathways.
+
+    \item \textbf{PIDNet-S} represents a lightweight real-time architecture 
+    explicitly incorporating boundary information.
+
+    \item \textbf{ISDNet} represents a high-resolution segmentation design 
+    combining shallow high-resolution features with deeper semantic 
+    representations.
+
+    \item \textbf{SegFormer-B0} represents a compact hierarchical 
+    transformer-based segmentation architecture.
+
+    \item \textbf{SOAR1-Nano1} represents the smallest proposed model.
+
+    \item \textbf{SOAR1-Small1} provides an intermediate capacity setting.
+
+    \item \textbf{SOAR1-Medium1} represents the higher-capacity SOAR setting 
+    used to evaluate the effect of additional representational capacity.
+
+\end{itemize}
+
+The model architectures and parameter counts are kept fixed between the 
+$1024\times1024$ and $2048\times2048$ experiments. Only the spatial input 
+resolution is changed.
 
 \begin{table}[t]
 \centering
-\caption{Native Ultra-High-Resolution Stress Test ($2048\times 2048$, Micro-Batch $B=1$, FP16 AMP) Across Heterogeneous Visual Domains Evaluating Topological Continuity, Memory Footprint, and Execution Viability.}
-\label{tab:highres_stress}
-\setlength{\tabcolsep}{3.8pt}
+\caption{Compared segmentation architectures.}
+\label{tab:models}
+\setlength{\tabcolsep}{6pt}
 \renewcommand{\arraystretch}{1.15}
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{llccccccccccc}
+\begin{tabular}{lcc}
 \toprule
-\multirow{2}{*}{\textbf{Architectural Paradigm}} & \multirow{2}{*}{\textbf{Model Architecture}} & \multirow{2}{*}{\textbf{\shortstack{Params\\(M)}}} & \multirow{2}{*}{\textbf{\shortstack{FLOPs\\(G)}}} & \multirow{2}{*}{\textbf{\shortstack{VRAM\\(MB)}}} & \multicolumn{3}{c}{\textbf{DeepGlobe (Road Networks)}} & \multicolumn{3}{c}{\textbf{CRACK500 (Pavement Cracks)}} & \multicolumn{3}{c}{\textbf{MAGFiLO (Micro-Filaments)}} \\
-\cmidrule(lr){6-8} \cmidrule(lr){9-11} \cmidrule(lr){12-14}
-& & & & & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} \\
+\textbf{Architecture} & \textbf{Params (M)} & \textbf{Role} \\
 \midrule
-Curvilinear / Topology & U-Net \cite{ronneberger2015u} & 17.27 & 873.6 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+U-Net & 17.27 & Classical encoder-decoder \\
+BiSeNet V2 & 3.42 & Lightweight bilateral network \\
+PIDNet-S & 7.62 & Boundary-aware real-time network \\
+ISDNet & 18.30 & High-resolution specialist \\
+SegFormer-B0 & 3.75 & Compact transformer \\
 \midrule
-\multirow{2}{*}{Real-Time Dual-Resolution} & BiSeNet V2 \cite{yu2021bisenet} & 3.42 & 84.8 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& PIDNet-S \cite{xu2023pidnet} & 7.62 & 191.2 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-\midrule
-High-Resolution Specialist & ISDNet \cite{guo2022isdnet} & 18.30 & 234.4 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-\midrule
-Vision Transformer & SegFormer-B0 \cite{xie2021segformer} & 3.75 & 113.6 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-\midrule
-\multirow{3}{*}{\textbf{SOAR Family (Ours)}} & \textbf{SOAR1-Nano1} & \textbf{0.85} & \textbf{28.24} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& \textbf{SOAR1-Small1} & 2.69 & 76.00 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& \textbf{SOAR1-Medium1} & 6.45 & 177.52 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+SOAR1-Nano1 & 0.85 & Proposed lightweight model \\
+SOAR1-Small1 & 2.69 & Proposed intermediate model \\
+SOAR1-Medium1 & 6.45 & Proposed higher-capacity model \\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
 
-\subsection{Architectural Ablation Studies}
-To systematically quantify the empirical contribution of each individual design innovation in SOAR, Table~\ref{tab:ablation} reports a cumulative component ablation on SOAR1-Nano1 on $1024\times 1024$ manifolds under the unified loss objective. Starting from a vanilla convolutional encoder-decoder with standard strided downsampling and bilinear upsampling:
 
-\begin{enumerate}
-    \item \textbf{Configuration 1 (Baseline ConvNet)}: Standard $3\times 3$ convolutions with Batch Normalization and bilinear upsampling; suffers from training instability under $B=1$ micro-batches and bilinear edge blur.
-    \item \textbf{Configuration 2 (+ Group Normalization)}: Replacing BatchNorm with Group Normalization ($G=8\text{--}16$) stabilizes channel statistics independently of batch size, eliminating micro-batch gradient variance under $B=1$.
-    \item \textbf{Configuration 3 (+ Large-Kernel Residual LKR-7)}: Replacing standard $3\times 3$ blocks with $7\times 7$ depthwise residual blocks with zero-init projection ($\gamma \leftarrow 0$) expands the effective receptive field to encompass wide curvilinear spans without expanding parameter count.
-    \item \textbf{Configuration 4 (+ Lossless WaveStem)}: Replacing standard strided $3\times 3$ convolution with 2D Haar DWT orthogonal decomposition preserves 100\% of high-frequency edge energy at stride $s2$ with zero learnable parameters, directly improving bIoU.
-    \item \textbf{Configuration 5 (+ Spectral Context SpectralCtx)}: Integrating global 2D FFT circular convolutions at stride $s32$ provides global contextual aggregation across the entire $1024^2$ canvas in $\mathcal{O}(HW \log HW)$ time, resolving long-range spatial ambiguity.
-    \item \textbf{Configuration 6 (+ Gated Convex Fusion \& Aggregation)}: Employing dynamically gated convex combinations ($g \cdot a + (1-g) \cdot b$) with sigmoid gating prevents deeper semantic features from overwhelming delicate high-resolution spatial boundaries.
-    \item \textbf{Configuration 7 (+ SegHead Sub-pixel Shuffling)}: Replacing bilinear upsampling from $s2 \to s1$ with periodic sub-pixel PixelShuffle upsampling ($r=2$) directly synthesizes full-resolution logits, eliminating boundary smoothing and maximizing clDice.
-    \item \textbf{Configuration 8 (Full SOAR1-Nano1 Baseline)}: Synthesizes all modules alongside focal odds bias initialization ($\pi = 0.01$), yielding the complete Pareto-optimal architecture.
-\end{enumerate}
+\subsection{Training Protocol}
+
+To isolate architectural differences, all models are trained using the same 
+dataset split, spatial resolution, optimizer family, training duration, 
+precision, and effective batch size.
+
+All experiments use micro-batch size
+
+\begin{equation}
+B=1
+\end{equation}
+
+with gradient accumulation over four iterations, resulting in an effective 
+batch size of four. This setting reflects the memory constraints imposed by 
+native high-resolution training.
+
+The AdamW optimizer is used with weight decay $10^{-4}$. The initial learning 
+rate is $10^{-3}$, followed by cosine annealing to $10^{-6}$ over 50 epochs. 
+A five-epoch linear warmup is applied at the beginning of training. 
+Automatic mixed precision (AMP) is enabled for both the $1024^2$ and 
+$2048^2$ experiments.
+
+Unless otherwise stated, the same preprocessing and augmentation policy is 
+used for all models. In particular, no model is given access to additional 
+resolution-specific information or a model-specific training schedule.
+
+For the main architectural comparison, all models are optimized under the 
+same segmentation objective defined in Eq.~\eqref{eq:soar_loss}. This 
+provides a common optimization target and avoids attributing performance 
+differences to simultaneously changing the architecture and loss function.
+
+
+\subsection{Evaluation Metrics}
+
+The evaluation focuses on three complementary aspects of segmentation 
+quality.
+
+\subsubsection{Region Accuracy}
+
+Mean Intersection-over-Union (mIoU) measures the global agreement between 
+the predicted foreground region and the ground-truth region:
+
+\begin{equation}
+\mathrm{IoU}
+=
+\frac{TP}{TP+FP+FN}.
+\end{equation}
+
+mIoU is used as the primary region-level segmentation metric.
+
+\subsubsection{Boundary Accuracy}
+
+Boundary IoU (bIoU) evaluates the agreement between predicted and ground-truth 
+boundaries within a fixed distance tolerance. We use a boundary tolerance 
+of $d=2$ pixels.
+
+This metric is particularly important for CRACK500 and MAGFiLO, where a 
+small spatial displacement can substantially alter the predicted structure.
+
+\subsubsection{Topological Continuity}
+
+Centerline Dice (clDice) is used to evaluate the preservation of elongated 
+structures and their connectivity. Unlike region overlap, clDice is less 
+sensitive to small boundary displacement and more directly reflects whether 
+a predicted structure remains connected along its centerline.
+
+The three metrics therefore provide complementary measurements:
+
+\begin{equation}
+\text{Segmentation Quality}
+=
+\{\text{mIoU},\text{bIoU},\text{clDice}\}.
+\end{equation}
+
+No single metric is treated as sufficient to characterize high-resolution 
+thin-structure segmentation.
+
+
+\subsection{Evaluation at $1024\times1024$}
+
+The first experiment establishes the primary cross-domain benchmark at 
+$1024\times1024$. Every model is evaluated independently on DeepGlobe, 
+CRACK500, and MAGFiLO using exactly the same evaluation protocol.
+
+The purpose of this experiment is not to determine which architecture is 
+best on a single dataset, but to determine whether the proposed architecture 
+maintains consistent behavior across substantially different structural 
+distributions.
 
 \begin{table}[t]
 \centering
-\caption{Architectural Component Isolation Ablation on SOAR1-Nano1 ($1024\times 1024$, $B=1$, FP16 AMP) Under Unified SOAR Loss Protocol ($\mathcal{L}_{\text{SOAR}}$).}
-\label{tab:ablation}
+\caption{Quantitative comparison at $1024\times1024$ across the three 
+evaluation domains. Higher values are better for all segmentation metrics. 
+Entries are obtained from the corresponding test sets.}
+\label{tab:results_1024}
 \setlength{\tabcolsep}{5pt}
 \renewcommand{\arraystretch}{1.15}
-\resizebox{0.88\linewidth}{!}{%
-\begin{tabular}{lccccc}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccccccc}
 \toprule
-\textbf{Ablation Configuration} & \textbf{Params (M)} & \textbf{FLOPs (G)} & \textbf{mIoU (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} \\
+\multirow{2}{*}{\textbf{Model}} &
+\multicolumn{3}{c}{\textbf{DeepGlobe}} &
+\multicolumn{3}{c}{\textbf{CRACK500}} &
+\multicolumn{3}{c}{\textbf{MAGFiLO}} \\
+\cmidrule(lr){2-4}
+\cmidrule(lr){5-7}
+\cmidrule(lr){8-10}
+&
+\textbf{mIoU} &
+\textbf{bIoU} &
+\textbf{clDice} &
+\textbf{mIoU} &
+\textbf{bIoU} &
+\textbf{clDice} &
+\textbf{mIoU} &
+\textbf{bIoU} &
+\textbf{clDice} \\
 \midrule
-1. Baseline ConvNet + Bilinear Up & 0.81 & 6.84 & -- & -- & -- \\
-2. + GroupNorm ($B=1$ Micro-Batch Stability) & 0.81 & 6.84 & -- & -- & -- \\
-3. + LKR-7 ($7\times 7$ Wide Field) & 0.84 & 7.02 & -- & -- & -- \\
-4. + WaveStem (Haar 2D DWT) & 0.84 & 6.98 & -- & -- & -- \\
-5. + SpectralCtx (Global 2D FFT) & 0.85 & 7.06 & -- & -- & -- \\
-6. + Gated Convex Fuse \& Agg & 0.85 & 7.06 & -- & -- & -- \\
-7. + SegHead Sub-Pixel Shuffle ($s2\to s1$) & 0.85 & 7.06 & -- & -- & -- \\
-8. \textbf{Full SOAR1-Nano1 Architecture} & \textbf{0.85} & \textbf{7.06} & -- & -- & -- \\
+U-Net
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+BiSeNet V2
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+PIDNet-S
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+ISDNet
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+SegFormer-B0
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+\midrule
+
+SOAR1-Nano1
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+SOAR1-Small1
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+SOAR1-Medium1
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
 \bottomrule
 \end{tabular}%
 }
 \end{table}
 
-\subsection{Systems-Level Hardware and Memory Profiling}
-To substantiate the systems engineering viability of SOAR on edge hardware, Table~\ref{tab:hardware_profiling} profiles Peak Activation Memory (MB) and per-frame Latency (ms) across spatial resolutions: $512\times 512$, $1024\times 1024$, and native $2048\times 2048$.
+The $1024\times1024$ results are used as the primary reference point for 
+cross-model comparison. In particular, the analysis considers whether the 
+SOAR variants provide a favorable trade-off between segmentation quality 
+and model capacity rather than evaluating accuracy independently of model 
+size.
 
-In standard deep learning runtimes (e.g., standard PyTorch caching allocator), intermediate activation tensors along multi-branch networks remain allocated in GPU DRAM until the entire computational graph terminates or garbage collection triggers. On $2048\times 2048$ inputs, this causes memory consumption to expand drastically. SOAR introduces \textbf{Consumer-Counted Eager Memory Deallocation}: by tracking the precise out-degree consumer count ($\text{deg}^+(v)$) of each node in the execution graph, feature buffers are proactively deallocated (via explicit reference dropping and cache recycling) the exact instant their final consumer completes computation.
+For each dataset, the best-performing model should be identified separately 
+for mIoU, bIoU, and clDice. This prevents the analysis from collapsing three 
+different properties of high-resolution segmentation into a single scalar 
+score.
 
-As outlined in Table~\ref{tab:hardware_profiling}, comparing SOAR1-Nano1 with and without eager deallocation demonstrates a marked reduction in peak DRAM footprint (e.g., $>70\%$ memory reduction at $2048^2$), enabling native $2048\times 2048$ processing well within commodity 16GB GPU constraints while outperforming baseline architectures across inference speed and frame latency.
+
+\subsection{Evaluation at $2048\times2048$}
+
+The second experiment evaluates the models directly at 
+$2048\times2048$. This experiment is the central high-resolution test of the 
+study.
+
+Increasing the spatial resolution from $1024^2$ to $2048^2$ increases the 
+number of image pixels by four times. Therefore, a model that performs well 
+at $1024^2$ is not automatically expected to preserve the same segmentation 
+quality at $2048^2$ under a fixed computational budget.
+
+The objective is to measure both absolute performance and resolution 
+stability.
+
+For each model and dataset, the resolution degradation is calculated as
+
+\begin{equation}
+\Delta M
+=
+M_{2048}
+-
+M_{1024},
+\end{equation}
+
+where $M$ represents mIoU, bIoU, or clDice.
+
+A relative retention score is additionally reported as
+
+\begin{equation}
+R_M
+=
+\frac{M_{2048}}{M_{1024}}
+\times 100\%.
+\end{equation}
+
+A higher retention score indicates that the model preserves more of its 
+segmentation quality when moving to the larger spatial domain.
 
 \begin{table}[t]
 \centering
-\caption{Systems-Level Hardware Scalability and Memory Profiling Across Spatial Resolutions ($512\times 512$, $1024\times 1024$, $2048\times 2048$) Under Micro-Batch $B=1$ and FP16 Precision.}
-\label{tab:hardware_profiling}
-\setlength{\tabcolsep}{5.5pt}
+\caption{Quantitative comparison at native $2048\times2048$ resolution. 
+Models that cannot execute under the predefined memory budget are reported 
+as OOM rather than being excluded from the benchmark.}
+\label{tab:results_2048}
+\setlength{\tabcolsep}{5pt}
 \renewcommand{\arraystretch}{1.15}
 \resizebox{\linewidth}{!}{%
-\begin{tabular}{lcccccc}
+\begin{tabular}{lccccccccc}
 \toprule
-\multirow{2}{*}{\textbf{Model Architecture / Memory Policy}} & \multicolumn{2}{c}{\textbf{$512\times 512$}} & \multicolumn{2}{c}{\textbf{$1024\times 1024$}} & \multicolumn{2}{c}{\textbf{$2048\times 2048$}} \\
-\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
-& \textbf{Peak VRAM (MB)} & \textbf{Latency (ms)} & \textbf{Peak VRAM (MB)} & \textbf{Latency (ms)} & \textbf{Peak VRAM (MB)} & \textbf{Latency (ms)} \\
+\multirow{2}{*}{\textbf{Model}} &
+\multicolumn{3}{c}{\textbf{DeepGlobe}} &
+\multicolumn{3}{c}{\textbf{CRACK500}} &
+\multicolumn{3}{c}{\textbf{MAGFiLO}} \\
+\cmidrule(lr){2-4}
+\cmidrule(lr){5-7}
+\cmidrule(lr){8-10}
+&
+\textbf{mIoU} &
+\textbf{bIoU} &
+\textbf{clDice} &
+\textbf{mIoU} &
+\textbf{bIoU} &
+\textbf{clDice} &
+\textbf{mIoU} &
+\textbf{bIoU} &
+\textbf{clDice} \\
 \midrule
-U-Net \cite{ronneberger2015u} (Standard Allocator) & -- & -- & -- & -- & -- & -- \\
-SegFormer-B0 \cite{xie2021segformer} (Standard Allocator) & -- & -- & -- & -- & -- & -- \\
-PIDNet-S \cite{xu2023pidnet} (Standard Allocator) & -- & -- & -- & -- & -- & -- \\
-ISDNet \cite{guo2022isdnet} (Standard Allocator) & -- & -- & -- & -- & -- & -- \\
+U-Net
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+BiSeNet V2
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+PIDNet-S
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+ISDNet
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+SegFormer-B0
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
 \midrule
-SOAR1-Nano1 (Standard Allocator w/o Eager Release) & -- & -- & -- & -- & -- & -- \\
-\textbf{SOAR1-Nano1 (Ours, Consumer-Counted Eager Release)} & -- & -- & -- & -- & -- & -- \\
-\textbf{SOAR1-Small1 (Ours, Consumer-Counted Eager Release)} & -- & -- & -- & -- & -- & -- \\
-\textbf{SOAR1-Medium1 (Ours, Consumer-Counted Eager Release)} & -- & -- & -- & -- & -- & -- \\
+
+SOAR1-Nano1
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+SOAR1-Small1
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
+SOAR1-Medium1
+& -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+
 \bottomrule
 \end{tabular}%
 }
 \end{table}
+
+The $2048\times2048$ experiment is intentionally treated as an execution 
+benchmark rather than as an unconstrained computational comparison. If a 
+model exceeds the available GPU memory, the result is recorded as 
+\texttt{OOM} under the predefined experimental configuration. Such a result 
+is itself relevant to the high-resolution evaluation because the objective 
+of this work is not merely to obtain high segmentation accuracy after 
+reducing the input resolution, but to process the high-resolution spatial 
+domain directly.
+
+No model is allowed to replace the $2048\times2048$ input with a lower 
+resolution solely to avoid memory exhaustion.
+
+
+\subsection{Cross-Resolution Analysis}
+
+The two-resolution experiments are jointly analyzed to determine whether 
+the proposed architecture exhibits stable behavior as spatial resolution 
+increases.
+
+For each dataset, the primary comparison is therefore represented as
+
+\begin{equation}
+M_{1024}
+\longrightarrow
+M_{2048},
+\end{equation}
+
+where $M$ denotes each of mIoU, bIoU, and clDice.
+
+Three observations are considered.
+
+First, \textbf{absolute segmentation quality} determines whether the model 
+provides competitive predictions at each resolution.
+
+Second, \textbf{resolution retention} determines whether the model maintains 
+its performance as the spatial domain grows.
+
+Third, \textbf{structural consistency} is evaluated through the relationship 
+between bIoU and clDice. A model that maintains mIoU while suffering a large 
+drop in clDice may preserve foreground area but fail to preserve the 
+connectivity of thin structures. Conversely, stable clDice together with 
+stable bIoU provides stronger evidence that the predicted geometry remains 
+structurally coherent.
+
+
+\subsection{Cross-Domain Analysis}
+
+The three datasets are intentionally analyzed jointly because they represent 
+different structural regimes.
+
+DeepGlobe primarily tests long-range connectivity over relatively large 
+spatial structures. CRACK500 emphasizes local boundary accuracy under noisy 
+surface appearance. MAGFiLO represents the most demanding case, where 
+foreground occupancy is extremely small and target structures can approach 
+the pixel scale.
+
+Accordingly, a robust high-resolution architecture should not be judged by 
+its performance on a single domain. Instead, the desired behavior is 
+consistent performance across the three datasets:
+
+\begin{equation}
+\mathcal{P}_{\mathrm{SOAR}}
+=
+\left[
+P_{\mathrm{DeepGlobe}},
+P_{\mathrm{CRACK500}},
+P_{\mathrm{MAGFiLO}}
+\right].
+\end{equation}
+
+The final analysis therefore reports both the individual dataset results and 
+their macro-average:
+
+\begin{equation}
+\overline{M}
+=
+\frac{1}{3}
+\sum_{d=1}^{3} M_d,
+\end{equation}
+
+where $M_d$ is the corresponding metric on dataset $d$.
+
+This macro-average is reported only as a secondary summary. The individual 
+dataset results remain the primary evidence because the three datasets have 
+different structural characteristics and therefore should not be assumed to 
+be statistically interchangeable.
+
+
+\subsection{Results Interpretation}
+
+The experimental results are interpreted according to four criteria.
+
+\begin{enumerate}
+
+    \item \textbf{Segmentation accuracy.}
+    SOAR should demonstrate competitive mIoU across the three domains, 
+    establishing that the resolution-preserving representation does not 
+    sacrifice global region segmentation.
+
+    \item \textbf{Boundary preservation.}
+    Improvements in bIoU are examined independently of mIoU. This is 
+    particularly important for CRACK500 and MAGFiLO, where boundary 
+    localization errors can occur even when regional overlap remains high.
+
+    \item \textbf{Topological continuity.}
+    clDice is analyzed to determine whether the predicted structures remain 
+    connected. This is especially important for DeepGlobe road networks and 
+    MAGFiLO micro-filaments.
+
+    \item \textbf{Resolution robustness.}
+    The change from $1024^2$ to $2048^2$ is used to determine whether the 
+    model's segmentation quality remains stable as the spatial domain grows.
+
+\end{enumerate}
+
+A model is therefore considered effective for the target problem only when 
+it demonstrates a balanced behavior across region accuracy, boundary 
+accuracy, and structural continuity. High mIoU alone is insufficient to 
+establish successful high-resolution thin-structure segmentation.
+
+\subsection{Summary of the Experimental Design}
+
+The complete evaluation can be summarized by the following experimental 
+matrix:
+
+\begin{table}[t]
+\centering
+\caption{Experimental matrix used in this study.}
+\label{tab:experimental_matrix}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{lll}
+\toprule
+\textbf{Factor} & \textbf{Settings} & \textbf{Purpose} \\
+\midrule
+Datasets &
+DeepGlobe, CRACK500, MAGFiLO &
+Cross-domain generalization \\
+
+Resolution &
+$1024^2$, $2048^2$ &
+High-resolution scalability \\
+
+Metrics &
+mIoU, bIoU, clDice &
+Region, boundary, topology \\
+
+SOAR Capacity &
+Nano1, Small1, Medium1 &
+Capacity scaling \\
+
+Baselines &
+U-Net, BiSeNet V2, PIDNet-S,
+ISDNet, SegFormer-B0 &
+Architectural comparison \\
+
+Batch &
+$B=1$ &
+Memory-constrained training \\
+
+Precision &
+FP16 AMP &
+High-resolution execution \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+This experimental design intentionally avoids introducing lower-resolution 
+benchmarks or unrelated stress-test datasets. The central evaluation remains 
+the same throughout: whether SOAR can process and segment thin, 
+geometry-sensitive structures directly at $1024\times1024$ and 
+$2048\times2048$ resolutions across three substantially different visual 
+domains.
 
 \section{Conclusion}
 This paper presented SOAR, a sub-pixel oriented, resolution-preserving neural architecture framework engineered to resolve the boundary-attenuation, topological-fracture, and memory-scaling limits of deep vision in high-resolution, geometry-critical prediction. By unifying the high-throughput SOAR1 family (WaveStem, LKR, SpectralCtx, Gated Fuse, SegHead) under an equilibrated tri-domain curriculum loss, SOAR establishes an end-to-end blueprint for high-resolution dense perception. This blueprint provides the foundation for empirical validation across premier baseline paradigms on multi-megapixel manifolds.
