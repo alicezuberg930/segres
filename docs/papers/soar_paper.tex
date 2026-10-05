@@ -1,11 +1,11 @@
-\documentclass[journal,10pt,twocolumn]{IEEEtran}
+\documentclass[11pt,a4paper]{article}
 
+\usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{algorithmic}
 \usepackage{algorithm}
 \usepackage{array}
 \usepackage{textcomp}
-\usepackage{stfloats}
 \usepackage{url}
 \usepackage{verbatim}
 \usepackage{graphicx}
@@ -17,12 +17,22 @@
 \usepackage{subcaption}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit, backgrounds, decorations.pathreplacing}
+\usepackage[colorlinks=true,linkcolor=blue!75!black,citecolor=blue!75!black,urlcolor=blue!75!black]{hyperref}
 
-\hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
+\linespread{1.15}
+
+\hyphenation{op-tical net-works semi-conduc-tor}
+
+\providecommand{\IEEEPARstart}[2]{\textbf{#1}#2}
+\ifdefined\IEEEkeywords
+\else
+  \newenvironment{IEEEkeywords}{\par\vspace{0.8em}\noindent\textbf{Keywords:}\enspace}{\par\vspace{1.2em}}
+\fi
 
 \begin{document}
 
-\title{SOAR: Sub-Pixel Oriented Aggregation and Resolution-Preserving Network via Frequency-Decoupled Geometric Synthesis}
+\title{\Large\textbf{SOAR: Sub-Pixel Oriented Aggregation and Resolution-Preserving Network via Frequency-Decoupled Geometric Synthesis}}
+\date{}
 
 \author{SOAR Research Consortium%
 \thanks{Manuscript received October 2, 2026; revised October 4, 2026. This research focuses on real-time neural architectures, edge memory bandwidth optimization, frequency-domain learning, topology-preserving loss dynamics, and one-stage supervised training for high-resolution dense vision manifolds.}}
@@ -57,9 +67,9 @@ Despite dramatic independent progress, deploying deep neural networks to high-re
     \item \textbf{Micro-Batch Training Collapse \& Background Swamping:} High-resolution imagery mandates micro-batch training ($B=1$ or $B=2$) due to GPU activation memory budgets. Under $B=1$, standard Batch Normalization statistics fluctuate chaotically, inducing gradient shocks. Concurrently, foreground filaments subtend $<0.5\%\text{--}1\%$ of the multi-megapixel canvas; standard cross-entropy gradients are swamped by billions of background pixels, collapsing the network into trivial all-background predictions.
 \end{enumerate}
 
-\begin{figure*}[!t]
+\begin{figure}[t]
 \centering
-\resizebox{\textwidth}{!}{%
+\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
     >=Stealth,
     font=\scriptsize,
@@ -161,7 +171,7 @@ Despite dramatic independent progress, deploying deep neural networks to high-re
 }
 \caption{Comprehensive Architectural Framework of the SOAR Baseline. Sub-pixel high-frequency spatial gradients are captured at native stride $s2$ by the zero-aliasing Wavelet Stem (\texttt{WaveStem}) and routed through a dedicated detail highway. Coarse contextual semantics are aggregated down to stride $s32$ via Large-Kernel Residual (LKR) depthwise blocks with zero-initialized Group Normalization ($\gamma \leftarrow 0$), augmented by global spectral context (\texttt{SpectralCtx}). The top-down Gated Convex Cross-Resolution Fusion (\texttt{Fuse}) neck dynamically interpolates spatial detail and semantic abstraction via continuous combination fields $G(u, v) \in [0, 1]$. Sub-pixel periodic shuffling (\texttt{SegHead}) directly synthesizes full-resolution logits ($s2 \to s1$) without bilinear interpolation blur.}
 \label{fig:architecture}
-\end{figure*}
+\end{figure}
 
 To overcome these foundational limits, this paper introduces \textbf{SOAR (Sub-Pixel Oriented Aggregation and Resolution-Preserving Network)}. SOAR establishes a unified resolution-preserving framework spanning from compact edge deployments (SOAR1-Nano, 0.85M parameters) to high-capacity high-resolution representations (SOAR1-XLarge, 21.85M parameters).
 
@@ -382,12 +392,13 @@ Classical U-Net \cite{ronneberger2015u} maintains moderate topological preservat
 
 In contrast, the SOAR family establishes a superior efficiency envelope: \textbf{SOAR1-Nano1} achieves comparable or superior receptive coverage at a fraction of the parameter cost ($0.85\text{ M}$ vs.\ $17.27\text{ M}$ for U-Net) and only $7.06\text{ G}$ FLOPs ($>30\times$ fewer than U-Net and $>6\times$ fewer than PIDNet-S), while \textbf{SOAR1-Small1} ($2.69\text{ M}$, $19.00\text{ G}$) and \textbf{SOAR1-Medium1} ($6.45\text{ M}$, $44.38\text{ G}$) scale capacity for dense geometry extraction with deterministic real-time frame rates ($>60\text{ FPS}$).
 
-\begin{table*}[!t]
+\begin{table}[t]
 \centering
 \caption{Comprehensive Benchmark on High-Resolution Manifolds ($1024\times 1024$) Under Unified Training Protocol ($\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \mathcal{L}_{\text{Dice}}$, $B=1$, FP16 AMP). Empirical metric entries represent the experimental blueprint awaiting execution.}
 \label{tab:main_benchmark}
-\setlength{\tabcolsep}{4.5pt}
-\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{llcccccccc}
 \toprule
 \textbf{Architectural Paradigm} & \textbf{Model Architecture} & \textbf{Params (M)} & \textbf{FLOPs (G)} & \textbf{Peak VRAM (MB)} & \textbf{Latency (ms)} & \textbf{FPS} & \textbf{mIoU (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} \\
@@ -405,20 +416,22 @@ Vision Transformer & SegFormer-B0 \cite{xie2021segformer} & 3.75 & 28.4 & -- & -
 & \textbf{SOAR1-Small1} & 2.69 & 19.00 & -- & -- & -- & -- & -- & -- \\
 & \textbf{SOAR1-Medium1} & 6.45 & 44.38 & -- & -- & -- & -- & -- & -- \\
 \bottomrule
-\end{tabular}
-\end{table*}
+\end{tabular}%
+}
+\end{table}
 
 \subsection{Native $2048\times 2048$ Ultra-High-Resolution Stress Benchmark}
 When scaling from $1024\times 1024$ to native $2048\times 2048$ multi-megapixel manifolds ($4.19\times 10^6$ pixels per image), deep vision architectures hit a severe \textbf{Memory Wall}. Conventional feature maps at early stages consume immense activation memory, frequently triggering Out-Of-Memory (OOM) fatal aborts or catastrophic memory thrashing on 16GB GPUs under $B=1$. Furthermore, the physical width of target filaments drops to $0.05\%\text{--}0.1\%$ of the spatial canvas, making topological continuity (clDice) exceptionally vulnerable to downsampling-induced disconnection.
 
 Table~\ref{tab:highres_stress} outlines the native $2048\times 2048$ stress benchmark. Traditional models encounter severe degradation: U-Net suffers extreme VRAM allocation ($>12\text{ GB}$) and latency spikes due to multi-scale high-resolution tensor concatenations; SegFormer-B0 experiences quadratic spatial attention bottlenecks in early self-attention stages; and BiSeNet V2 exhibits severe boundary disintegration. In contrast, SOAR exploits its lossless Haar WaveStem decomposition to ingest $2048\times 2048$ inputs directly into $1024\times 1024$ 4-channel wavebands with zero parameter overhead, coupled with Consumer-Counted Eager Memory Deallocation to maintain a lean memory footprint. This architecture guarantees non-saturating VRAM and robust topological preservation without spatial downsampling artifacts.
 
-\begin{table*}[!t]
+\begin{table}[t]
 \centering
 \caption{Native Ultra-High-Resolution Stress Test ($2048\times 2048$, Micro-Batch $B=1$, FP16 AMP) Evaluating Topological Continuity, Memory Footprint, and Execution Viability Across Paradigms.}
 \label{tab:highres_stress}
-\setlength{\tabcolsep}{4.2pt}
-\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{llcccccccc}
 \toprule
 \textbf{Model Architecture} & \textbf{Architectural Paradigm} & \textbf{Params (M)} & \textbf{FLOPs (G)} & \textbf{Peak VRAM (MB)} & \textbf{Latency (ms)} & \textbf{FPS} & \textbf{clDice (\%)} & \textbf{mIoU (\%)} & \textbf{bIoU (\%)} \\
@@ -433,8 +446,9 @@ SegFormer-B0 \cite{xie2021segformer} & Hierarchical Transformer + MLP & 3.75 & 1
 \textbf{SOAR1-Small1 (Ours)} & \textbf{WaveStem + LKR + SpectralCtx} & 2.69 & 76.00 & -- & -- & -- & -- & -- & -- \\
 \textbf{SOAR1-Medium1 (Ours)} & \textbf{WaveStem + LKR + SpectralCtx} & 6.45 & 177.52 & -- & -- & -- & -- & -- & -- \\
 \bottomrule
-\end{tabular}
-\end{table*}
+\end{tabular}%
+}
+\end{table}
 
 \subsection{Cross-Domain Generalization}
 A robust scientific vision architecture must exhibit domain-invariant generalization across heterogeneous imaging modalities without hyperparameter retuning. Table~\ref{tab:domain_generalization} reports cross-domain transfer across:
@@ -444,12 +458,13 @@ A robust scientific vision architecture must exhibit domain-invariant generaliza
 
 By decoupling spatial geometry from high-frequency boundary phase via orthogonal wavelets and wide-field LKR receptive fields, SOAR achieves consistent domain robustness across all three manifolds, demonstrating that frequency-domain separation provides an effective inductive bias for curvilinear structures regardless of optical scale.
 
-\begin{table*}[!t]
+\begin{table}[t]
 \centering
 \caption{Cross-Domain Generalization Benchmark Across Heterogeneous High-Resolution Geometry Domains ($1024\times 1024$) Under Standardized Objective ($\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \mathcal{L}_{\text{Dice}}$).}
 \label{tab:domain_generalization}
 \setlength{\tabcolsep}{6.5pt}
-\renewcommand{\arraystretch}{1.12}
+\renewcommand{\arraystretch}{1.15}
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{lcccccc}
 \toprule
 \multirow{2}{*}{\textbf{Model Architecture}} & \multicolumn{2}{c}{\textbf{DeepGlobe (Road Networks)}} & \multicolumn{2}{c}{\textbf{CRACK500 (Pavement Cracks)}} & \multicolumn{2}{c}{\textbf{MAGFiLO (Micro-Filaments)}} \\
@@ -466,8 +481,9 @@ SegFormer-B0 \cite{xie2021segformer} & -- & -- & -- & -- & -- & -- \\
 \textbf{SOAR1-Small1 (Ours)} & -- & -- & -- & -- & -- & -- \\
 \textbf{SOAR1-Medium1 (Ours)} & -- & -- & -- & -- & -- & -- \\
 \bottomrule
-\end{tabular}
-\end{table*}
+\end{tabular}%
+}
+\end{table}
 
 \subsection{Architectural Ablation Studies}
 To systematically quantify the empirical contribution of each individual design innovation in SOAR, Table~\ref{tab:ablation} reports a cumulative component ablation on SOAR1-Nano1 on $1024\times 1024$ manifolds under the unified loss objective. Starting from a vanilla convolutional encoder-decoder with standard strided downsampling and bilinear upsampling:
@@ -483,12 +499,13 @@ To systematically quantify the empirical contribution of each individual design 
     \item \textbf{Configuration 8 (Full SOAR1-Nano1 Baseline)}: Synthesizes all modules alongside focal odds bias initialization ($\pi = 0.01$), yielding the complete Pareto-optimal architecture.
 \end{enumerate}
 
-\begin{table}[!t]
+\begin{table}[t]
 \centering
 \caption{Architectural Component Isolation Ablation on SOAR1-Nano1 ($1024\times 1024$, $B=1$, FP16 AMP) Under Unified Objective ($\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{CE}} + \mathcal{L}_{\text{Dice}}$).}
 \label{tab:ablation}
-\setlength{\tabcolsep}{4.0pt}
-\resizebox{\columnwidth}{!}{%
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\resizebox{0.88\linewidth}{!}{%
 \begin{tabular}{lccccc}
 \toprule
 \textbf{Ablation Configuration} & \textbf{Params (M)} & \textbf{FLOPs (G)} & \textbf{mIoU (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} \\
@@ -513,12 +530,13 @@ In standard deep learning runtimes (e.g., standard PyTorch caching allocator), i
 
 As outlined in Table~\ref{tab:hardware_profiling}, comparing SOAR1-Nano1 with and without eager deallocation demonstrates a marked reduction in peak DRAM footprint (e.g., $>70\%$ memory reduction at $2048^2$), enabling native $2048\times 2048$ processing well within commodity 16GB GPU constraints while outperforming baseline architectures across inference speed and frame latency.
 
-\begin{table*}[!t]
+\begin{table}[t]
 \centering
 \caption{Systems-Level Hardware Scalability and Memory Profiling Across Spatial Resolutions ($512\times 512$, $1024\times 1024$, $2048\times 2048$) Under Micro-Batch $B=1$ and FP16 Precision.}
 \label{tab:hardware_profiling}
-\setlength{\tabcolsep}{5.2pt}
-\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{5.5pt}
+\renewcommand{\arraystretch}{1.15}
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{lcccccc}
 \toprule
 \multirow{2}{*}{\textbf{Model Architecture / Memory Policy}} & \multicolumn{2}{c}{\textbf{$512\times 512$}} & \multicolumn{2}{c}{\textbf{$1024\times 1024$}} & \multicolumn{2}{c}{\textbf{$2048\times 2048$}} \\
@@ -535,8 +553,9 @@ SOAR1-Nano1 (Standard Allocator w/o Eager Release) & -- & -- & -- & -- & -- & --
 \textbf{SOAR1-Small1 (Ours, Consumer-Counted Eager Release)} & -- & -- & -- & -- & -- & -- \\
 \textbf{SOAR1-Medium1 (Ours, Consumer-Counted Eager Release)} & -- & -- & -- & -- & -- & -- \\
 \bottomrule
-\end{tabular}
-\end{table*}
+\end{tabular}%
+}
+\end{table}
 
 \section{Conclusion}
 This paper presented SOAR, a sub-pixel oriented, resolution-preserving neural architecture framework engineered to resolve the boundary-attenuation, topological-fracture, and memory-scaling limits of deep vision in high-resolution, geometry-critical prediction. By unifying the high-throughput SOAR1 family (WaveStem, LKR, SpectralCtx, Gated Fuse, SegHead) under an equilibrated tri-domain curriculum loss, SOAR establishes an end-to-end blueprint for high-resolution dense perception. This blueprint provides the foundation for empirical validation across premier baseline paradigms on multi-megapixel manifolds.
