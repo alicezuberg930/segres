@@ -64,7 +64,11 @@ class SegmentationDataset(Dataset):
         self.data_root = Path(data_root)
         self.split = split.lower()
         self.is_train = self.split in ('train', 'training')
-        self.has_gt = self.split in ('train', 'training', 'val', 'valid', 'validation')
+        self.has_gt = (
+            self.split in ('train', 'training', 'val', 'valid', 'validation')
+            or bool(annotation_file)
+            or bool(mask_dir)
+        )
         self.img_size = img_size
         self.in_channels = in_channels
         self.num_classes = max(1, int(num_classes))
@@ -125,6 +129,8 @@ class SegmentationDataset(Dataset):
         self.annotations: Dict[str, Any] = {}
         self.img_to_masks: Dict[str, str] = {}
         self._load_annotations(annotation_file, mask_dir)
+        if bool(self.img_to_masks) or bool(self.annotations):
+            self.has_gt = True
 
         # In-memory processing cache
         self._cache_store: Dict[str, Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray], Optional[Dict]]] = {}
@@ -390,15 +396,18 @@ class SegmentationDataset(Dataset):
             fname = img_info["file_name"]
             id_to_filename[img_id] = fname
             self.img_to_masks[fname] = "coco"
+            self.img_to_masks[Path(fname).name] = "coco"
+            self.img_to_masks[Path(fname).stem] = "coco"
 
         for ann in coco_payload.get("annotations", []):
             img_id = ann.get("image_id")
             if img_id not in id_to_filename:
                 continue
             fname = id_to_filename[img_id]
-            if fname not in self.annotations:
-                self.annotations[fname] = []
-            self.annotations[fname].append(ann)
+            for key in (fname, Path(fname).name, Path(fname).stem):
+                if key not in self.annotations:
+                    self.annotations[key] = []
+                self.annotations[key].append(ann)
 
     def _resolve_polygon_labels_dir(self) -> Optional[Path]:
         """Locate polygon label directory."""
@@ -628,15 +637,28 @@ class SegmentationDataset(Dataset):
         """Rasterize COCO polygon coordinates into a binary or multi-class mask."""
         polys = self.annotations.get(img_name)
         if polys is None:
+            polys = self.annotations.get(Path(img_name).name)
+        if polys is None:
             polys = self.annotations.get(Path(img_name).stem)
 
-        if not polys:
-            return None
+        if polys is None:
+            if (
+                img_name in self.img_to_masks
+                or Path(img_name).name in self.img_to_masks
+                or Path(img_name).stem in self.img_to_masks
+            ):
+                polys = []
+            else:
+                return None
 
         if raw_shape is not None:
             h, w = raw_shape
         else:
-            img_path = self.file_map.get(img_name) or self.file_map.get(Path(img_name).stem)
+            img_path = (
+                self.file_map.get(img_name)
+                or self.file_map.get(Path(img_name).name)
+                or self.file_map.get(Path(img_name).stem)
+            )
             if img_path is None:
                 return None
             img = self._read_image(img_path)

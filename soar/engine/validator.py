@@ -151,7 +151,10 @@ class BaseValidator:
         for batch in pbar:
             images = self._ensure_4d_tensor(batch["image"].to(self.device, non_blocking=True))
             valid_masks = self._ensure_4d_tensor(batch["valid_mask"].to(self.device, non_blocking=True))
-            masks = self._ensure_4d_tensor(batch["mask"].to(self.device, non_blocking=True))
+            if batch.get("mask") is not None:
+                masks = self._ensure_4d_tensor(batch["mask"].to(self.device, non_blocking=True))
+            else:
+                masks = torch.zeros((images.shape[0], self.num_classes, images.shape[-2], images.shape[-1]), device=self.device, dtype=torch.float32)
 
             preds = self.model(images)
             loss, _ = self.criterion(preds, masks, valid_masks, 0)
