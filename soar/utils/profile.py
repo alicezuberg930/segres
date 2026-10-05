@@ -134,32 +134,60 @@ def get_latex_model_name(model_name: str) -> str:
     return model_name
 
 
+def _format_tri_metrics(d_metrics: Optional[Dict[str, float]]) -> Tuple[str, str, str]:
+    if not d_metrics:
+        return "--", "--", "--"
+    miou = d_metrics.get("iou", d_metrics.get("mIoU"))
+    biou = d_metrics.get("boundary_iou", d_metrics.get("bIoU"))
+    cldice = d_metrics.get("cldice", d_metrics.get("clDice"))
+    s_miou = f"{miou * 100.0:.2f}" if miou is not None else "--"
+    s_biou = f"{biou * 100.0:.2f}" if biou is not None else "--"
+    s_cldice = f"{cldice * 100.0:.2f}" if cldice is not None else "--"
+    return s_miou, s_biou, s_cldice
+
+
 def format_latex_row_table1(
     model_name: str,
     params_m: float,
     flops_g: float,
-    metrics: Dict[str, float],
-    peak_vram_mb: Optional[float] = None,
-    latency_ms: Optional[float] = None,
+    metrics: Dict[str, Any],
     fps: Optional[float] = None,
+    dataset: Optional[str] = None,
 ) -> str:
     """Format row for Table I (tab:main_benchmark, 1024x1024):
-    Paradigm & Model & Params & FLOPs & Peak VRAM & Latency & FPS & mIoU & bIoU & clDice \\
+    Paradigm & Model & Params & FLOPs & FPS & DeepGlobe (mIoU, bIoU, clDice) & CRACK500 (mIoU, bIoU, clDice) & MAGFiLO (mIoU, bIoU, clDice) \\
     """
     name_str = get_latex_model_name(model_name)
     paradigm = get_model_paradigm(model_name)
-    vram_str = f"{peak_vram_mb:.1f}" if peak_vram_mb is not None else "--"
-    lat_str = f"{latency_ms:.1f}" if latency_ms is not None else "--"
     fps_str = f"{fps:.1f}" if fps is not None else "--"
 
-    miou = metrics.get("iou", 0.0) * 100.0
-    biou = metrics.get("boundary_iou", 0.0) * 100.0
-    cldice = metrics.get("cldice", 0.0) * 100.0
+    # Support nested dataset dict or single dataset mapping
+    dg_m, cr_m, mg_m = None, None, None
+    if isinstance(metrics, dict) and any(k in metrics for k in ("deepglobe", "crack500", "magfilo")):
+        dg_m = metrics.get("deepglobe")
+        cr_m = metrics.get("crack500")
+        mg_m = metrics.get("magfilo")
+    elif dataset:
+        ds_k = dataset.lower()
+        if "deepglobe" in ds_k or "road" in ds_k:
+            dg_m = metrics
+        elif "crack" in ds_k:
+            cr_m = metrics
+        elif "magfilo" in ds_k or "filament" in ds_k:
+            mg_m = metrics
+    else:
+        # Default single metrics
+        dg_m = metrics
+
+    dg_iou, dg_bnd, dg_cl = _format_tri_metrics(dg_m)
+    cr_iou, cr_bnd, cr_cl = _format_tri_metrics(cr_m)
+    mg_iou, mg_bnd, mg_cl = _format_tri_metrics(mg_m)
 
     return (
-        f"{paradigm} & {name_str} & {params_m:.2f} & {flops_g:.2f} & "
-        f"{vram_str} & {lat_str} & {fps_str} & "
-        f"{miou:.2f} & {biou:.2f} & {cldice:.2f} \\\\"
+        f"{paradigm} & {name_str} & {params_m:.2f} & {flops_g:.2f} & {fps_str} & "
+        f"{dg_iou} & {dg_bnd} & {dg_cl} & "
+        f"{cr_iou} & {cr_bnd} & {cr_cl} & "
+        f"{mg_iou} & {mg_bnd} & {mg_cl} \\\\"
     )
 
 
@@ -167,30 +195,45 @@ def format_latex_row_table2(
     model_name: str,
     params_m: float,
     flops_g: float,
-    metrics: Dict[str, float],
+    metrics: Dict[str, Any],
     peak_vram_mb: Optional[float] = None,
-    latency_ms: Optional[float] = None,
-    fps: Optional[float] = None,
+    dataset: Optional[str] = None,
 ) -> str:
     """Format row for Table II (tab:highres_stress, 2048x2048):
-    Model & Paradigm & Params & FLOPs & Peak VRAM & Latency & FPS & clDice & mIoU & bIoU \\
+    Paradigm & Model & Params & FLOPs & Peak VRAM & DeepGlobe (mIoU, bIoU, clDice) & CRACK500 (mIoU, bIoU, clDice) & MAGFiLO (mIoU, bIoU, clDice) \\
     """
     name_str = get_latex_model_name(model_name)
     paradigm = get_model_paradigm(model_name)
     vram_str = f"{peak_vram_mb:.1f}" if peak_vram_mb is not None else "--"
-    lat_str = f"{latency_ms:.1f}" if latency_ms is not None else "--"
-    fps_str = f"{fps:.1f}" if fps is not None else "--"
 
-    miou = metrics.get("iou", 0.0) * 100.0
-    biou = metrics.get("boundary_iou", 0.0) * 100.0
-    cldice = metrics.get("cldice", 0.0) * 100.0
+    dg_m, cr_m, mg_m = None, None, None
+    if isinstance(metrics, dict) and any(k in metrics for k in ("deepglobe", "crack500", "magfilo")):
+        dg_m = metrics.get("deepglobe")
+        cr_m = metrics.get("crack500")
+        mg_m = metrics.get("magfilo")
+    elif dataset:
+        ds_k = dataset.lower()
+        if "deepglobe" in ds_k or "road" in ds_k:
+            dg_m = metrics
+        elif "crack" in ds_k:
+            cr_m = metrics
+        elif "magfilo" in ds_k or "filament" in ds_k:
+            mg_m = metrics
+    else:
+        dg_m = metrics
+
+    dg_iou, dg_bnd, dg_cl = _format_tri_metrics(dg_m)
+    cr_iou, cr_bnd, cr_cl = _format_tri_metrics(cr_m)
+    mg_iou, mg_bnd, mg_cl = _format_tri_metrics(mg_m)
 
     return (
-        f"{name_str} & {paradigm} & {params_m:.2f} & {flops_g:.2f} & "
-        f"{vram_str} & {lat_str} & {fps_str} & "
-        f"{cldice:.2f} & {miou:.2f} & {biou:.2f} \\\\"
+        f"{paradigm} & {name_str} & {params_m:.2f} & {flops_g:.2f} & {vram_str} & "
+        f"{dg_iou} & {dg_bnd} & {dg_cl} & "
+        f"{cr_iou} & {cr_bnd} & {cr_cl} & "
+        f"{mg_iou} & {mg_bnd} & {mg_cl} \\\\"
     )
 
 
 # Backward-compatible alias
 format_latex_row_table3 = format_latex_row_table2
+

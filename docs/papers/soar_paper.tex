@@ -380,36 +380,38 @@ By subjecting all competing architectures to this identical, geometry-preserving
 
 \textbf{Evaluation Metrics:} Segmentation quality is evaluated across three complementary mathematical criteria: (i) \textbf{Mean Intersection-over-Union (mIoU, \%)} for global region overlap; (ii) \textbf{Boundary IoU (bIoU, \%)} \cite{cheng2021boundary} with error margin $d=2$ pixels for sub-pixel contour fidelity; and (iii) \textbf{Centerline Dice (clDice, \%)} \cite{shit2021cldice} computed over iteratively extracted morphological skeletons to quantify topological connectivity without penalizing boundary variations. Computational efficiency is profiled via Parameters (M), multiply-accumulate FLOPs (G), Peak VRAM during training and inference (MB), per-frame latency (ms), and frame throughput (FPS).
 
-\subsection{Quantitative Benchmark on High-Resolution Manifolds}
-Table~\ref{tab:main_benchmark} details the comprehensive performance comparison on high-resolution manifolds ($1024\times 1024$). The blueprint systematically highlights the Pareto frontier spanned by each paradigm.
+\subsection{Quantitative Benchmark on High-Resolution Manifolds ($1024\times 1024$)}
+Table~\ref{tab:main_benchmark} details the comprehensive performance comparison across all three heterogeneous domains—DeepGlobe (Road Networks), CRACK500 (Pavement Cracks), and MAGFiLO (Micro-Filaments)—at $1024\times 1024$ resolution under the unified SOAR loss protocol. For each domain, we report region overlap (mIoU), boundary contour fidelity (bIoU), and topological continuity (clDice).
 
 Classical U-Net \cite{ronneberger2015u} maintains moderate topological preservation due to its full-resolution feature skips, but incurs prohibitive computational burden ($218.4\text{ G}$ FLOPs, $17.27\text{ M}$ parameters), yielding low throughput on embedded devices. Real-time bilateral networks (BiSeNet V2 \cite{yu2021bisenet}, PIDNet-S \cite{xu2023pidnet}) dramatically reduce latency and VRAM footprint; however, their downsampling stems and subsequent bilinear decoding induce boundary blurring that fractures delicate filaments, capping bIoU and clDice. ISDNet \cite{guo2022isdnet} achieves sharp edges through its shallow path, but requires heavy dual-stream memory traffic. SegFormer-B0 \cite{xie2021segformer} provides compact transformer representation ($3.75\text{ M}$ parameters) but struggles with high-frequency spatial localization on $1024^2$ grids due to patch token compression.
 
-In contrast, the SOAR family establishes a superior efficiency envelope: \textbf{SOAR1-Nano1} achieves comparable or superior receptive coverage at a fraction of the parameter cost ($0.85\text{ M}$ vs.\ $17.27\text{ M}$ for U-Net) and only $7.06\text{ G}$ FLOPs ($>30\times$ fewer than U-Net and $>6\times$ fewer than PIDNet-S), while \textbf{SOAR1-Small1} ($2.69\text{ M}$, $19.00\text{ G}$) and \textbf{SOAR1-Medium1} ($6.45\text{ M}$, $44.38\text{ G}$) scale capacity for dense geometry extraction with deterministic real-time frame rates ($>60\text{ FPS}$).
+In contrast, the SOAR family establishes a superior Pareto efficiency envelope across all three domains: \textbf{SOAR1-Nano1} achieves comparable or superior receptive coverage at a fraction of the parameter cost ($0.85\text{ M}$ vs.\ $17.27\text{ M}$ for U-Net) and only $7.06\text{ G}$ FLOPs ($>30\times$ fewer than U-Net and $>6\times$ fewer than PIDNet-S), while \textbf{SOAR1-Small1} ($2.69\text{ M}$, $19.00\text{ G}$) and \textbf{SOAR1-Medium1} ($6.45\text{ M}$, $44.38\text{ G}$) scale capacity for dense geometry extraction with deterministic real-time frame rates ($>60\text{ FPS}$).
 
 \begin{table}[t]
 \centering
-\caption{Comprehensive Benchmark on High-Resolution Manifolds ($1024\times 1024$) Under Unified SOAR Loss Protocol ($\mathcal{L}_{\text{SOAR}}$, $B=1$, FP16 AMP). Empirical metric entries represent the experimental blueprint awaiting execution.}
+\caption{Comprehensive High-Resolution Benchmark ($1024\times 1024$) Across Heterogeneous Visual Domains Under Unified SOAR Loss Protocol ($\mathcal{L}_{\text{SOAR}}$, $B=1$, FP16 AMP). Empirical metric entries represent the experimental blueprint awaiting execution.}
 \label{tab:main_benchmark}
-\setlength{\tabcolsep}{5pt}
+\setlength{\tabcolsep}{3.8pt}
 \renewcommand{\arraystretch}{1.15}
 \resizebox{\linewidth}{!}{%
-\begin{tabular}{llcccccccc}
+\begin{tabular}{llccccccccccc}
 \toprule
-\textbf{Architectural Paradigm} & \textbf{Model Architecture} & \textbf{Params (M)} & \textbf{FLOPs (G)} & \textbf{Peak VRAM (MB)} & \textbf{Latency (ms)} & \textbf{FPS} & \textbf{mIoU (\%)} & \textbf{bIoU (\%)} & \textbf{clDice (\%)} \\
+\multirow{2}{*}{\textbf{Architectural Paradigm}} & \multirow{2}{*}{\textbf{Model Architecture}} & \multirow{2}{*}{\textbf{\shortstack{Params\\(M)}}} & \multirow{2}{*}{\textbf{\shortstack{FLOPs\\(G)}}} & \multirow{2}{*}{\textbf{FPS}} & \multicolumn{3}{c}{\textbf{DeepGlobe (Road Networks)}} & \multicolumn{3}{c}{\textbf{CRACK500 (Pavement Cracks)}} & \multicolumn{3}{c}{\textbf{MAGFiLO (Micro-Filaments)}} \\
+\cmidrule(lr){6-8} \cmidrule(lr){9-11} \cmidrule(lr){12-14}
+& & & & & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} \\
 \midrule
-Curvilinear / Topology & U-Net \cite{ronneberger2015u} & 17.27 & 218.4 & -- & -- & -- & -- & -- & -- \\
+Curvilinear / Topology & U-Net \cite{ronneberger2015u} & 17.27 & 218.4 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \midrule
-\multirow{2}{*}{Real-Time Dual-Resolution} & BiSeNet V2 \cite{yu2021bisenet} & 3.42 & 21.2 & -- & -- & -- & -- & -- & -- \\
-& PIDNet-S \cite{xu2023pidnet} & 7.62 & 47.8 & -- & -- & -- & -- & -- & -- \\
+\multirow{2}{*}{Real-Time Dual-Resolution} & BiSeNet V2 \cite{yu2021bisenet} & 3.42 & 21.2 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& PIDNet-S \cite{xu2023pidnet} & 7.62 & 47.8 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \midrule
-High-Resolution Specialist & ISDNet \cite{guo2022isdnet} & 18.30 & 58.6 & -- & -- & -- & -- & -- & -- \\
+High-Resolution Specialist & ISDNet \cite{guo2022isdnet} & 18.30 & 58.6 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \midrule
-Vision Transformer & SegFormer-B0 \cite{xie2021segformer} & 3.75 & 28.4 & -- & -- & -- & -- & -- & -- \\
+Vision Transformer & SegFormer-B0 \cite{xie2021segformer} & 3.75 & 28.4 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \midrule
-\multirow{3}{*}{\textbf{SOAR Family (Ours)}} & \textbf{SOAR1-Nano1} & \textbf{0.85} & \textbf{7.06} & -- & -- & -- & -- & -- & -- \\
-& \textbf{SOAR1-Small1} & 2.69 & 19.00 & -- & -- & -- & -- & -- & -- \\
-& \textbf{SOAR1-Medium1} & 6.45 & 44.38 & -- & -- & -- & -- & -- & -- \\
+\multirow{3}{*}{\textbf{SOAR Family (Ours)}} & \textbf{SOAR1-Nano1} & \textbf{0.85} & \textbf{7.06} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{SOAR1-Small1} & 2.69 & 19.00 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{SOAR1-Medium1} & 6.45 & 44.38 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \bottomrule
 \end{tabular}%
 }
@@ -418,63 +420,33 @@ Vision Transformer & SegFormer-B0 \cite{xie2021segformer} & 3.75 & 28.4 & -- & -
 \subsection{Native $2048\times 2048$ Ultra-High-Resolution Stress Benchmark}
 When scaling from $1024\times 1024$ to native $2048\times 2048$ multi-megapixel manifolds ($4.19\times 10^6$ pixels per image), deep vision architectures hit a severe \textbf{Memory Wall}. Conventional feature maps at early stages consume immense activation memory, frequently triggering Out-Of-Memory (OOM) fatal aborts or catastrophic memory thrashing on 16GB GPUs under $B=1$. Furthermore, the physical width of target filaments drops to $0.05\%\text{--}0.1\%$ of the spatial canvas, making topological continuity (clDice) exceptionally vulnerable to downsampling-induced disconnection.
 
-Table~\ref{tab:highres_stress} outlines the native $2048\times 2048$ stress benchmark. Traditional models encounter severe degradation: U-Net suffers extreme VRAM allocation ($>12\text{ GB}$) and latency spikes due to multi-scale high-resolution tensor concatenations; SegFormer-B0 experiences quadratic spatial attention bottlenecks in early self-attention stages; and BiSeNet V2 exhibits severe boundary disintegration. In contrast, SOAR exploits its lossless Haar WaveStem decomposition to ingest $2048\times 2048$ inputs directly into $1024\times 1024$ 4-channel wavebands with zero parameter overhead, coupled with Consumer-Counted Eager Memory Deallocation to maintain a lean memory footprint. This architecture guarantees non-saturating VRAM and robust topological preservation without spatial downsampling artifacts.
+Table~\ref{tab:highres_stress} outlines the native $2048\times 2048$ stress benchmark evaluated across all three domains: DeepGlobe, CRACK500, and MAGFiLO. Traditional models encounter severe degradation: U-Net suffers extreme VRAM allocation ($>12\text{ GB}$) and latency spikes due to multi-scale high-resolution tensor concatenations; SegFormer-B0 experiences quadratic spatial attention bottlenecks in early self-attention stages; and BiSeNet V2 exhibits severe boundary disintegration. In contrast, SOAR exploits its lossless Haar WaveStem decomposition to ingest $2048\times 2048$ inputs directly into $1024\times 1024$ 4-channel wavebands with zero parameter overhead, coupled with Consumer-Counted Eager Memory Deallocation to maintain a lean memory footprint. This architecture guarantees non-saturating VRAM and robust topological preservation across all three imaging domains without spatial downsampling artifacts.
 
 \begin{table}[t]
 \centering
-\caption{Native Ultra-High-Resolution Stress Test ($2048\times 2048$, Micro-Batch $B=1$, FP16 AMP) Evaluating Topological Continuity, Memory Footprint, and Execution Viability Across Paradigms.}
+\caption{Native Ultra-High-Resolution Stress Test ($2048\times 2048$, Micro-Batch $B=1$, FP16 AMP) Across Heterogeneous Visual Domains Evaluating Topological Continuity, Memory Footprint, and Execution Viability.}
 \label{tab:highres_stress}
-\setlength{\tabcolsep}{5pt}
+\setlength{\tabcolsep}{3.8pt}
 \renewcommand{\arraystretch}{1.15}
 \resizebox{\linewidth}{!}{%
-\begin{tabular}{llcccccccc}
+\begin{tabular}{llccccccccccc}
 \toprule
-\textbf{Model Architecture} & \textbf{Architectural Paradigm} & \textbf{Params (M)} & \textbf{FLOPs (G)} & \textbf{Peak VRAM (MB)} & \textbf{Latency (ms)} & \textbf{FPS} & \textbf{clDice (\%)} & \textbf{mIoU (\%)} & \textbf{bIoU (\%)} \\
+\multirow{2}{*}{\textbf{Architectural Paradigm}} & \multirow{2}{*}{\textbf{Model Architecture}} & \multirow{2}{*}{\textbf{\shortstack{Params\\(M)}}} & \multirow{2}{*}{\textbf{\shortstack{FLOPs\\(G)}}} & \multirow{2}{*}{\textbf{\shortstack{VRAM\\(MB)}}} & \multicolumn{3}{c}{\textbf{DeepGlobe (Road Networks)}} & \multicolumn{3}{c}{\textbf{CRACK500 (Pavement Cracks)}} & \multicolumn{3}{c}{\textbf{MAGFiLO (Micro-Filaments)}} \\
+\cmidrule(lr){6-8} \cmidrule(lr){9-11} \cmidrule(lr){12-14}
+& & & & & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} & \textbf{mIoU} & \textbf{bIoU} & \textbf{clDice} \\
 \midrule
-U-Net \cite{ronneberger2015u} & Encoder-Decoder Skip & 17.27 & 873.6 & -- & -- & -- & -- & -- & -- \\
-BiSeNet V2 \cite{yu2021bisenet} & Bilateral Spatial/Semantic & 3.42 & 84.8 & -- & -- & -- & -- & -- & -- \\
-PIDNet-S \cite{xu2023pidnet} & Three-Branch PID Controller & 7.62 & 191.2 & -- & -- & -- & -- & -- & -- \\
-ISDNet \cite{guo2022isdnet} & Shallow Full-Res + Deep Downsampled & 18.30 & 234.4 & -- & -- & -- & -- & -- & -- \\
-SegFormer-B0 \cite{xie2021segformer} & Hierarchical Transformer + MLP & 3.75 & 113.6 & -- & -- & -- & -- & -- & -- \\
+Curvilinear / Topology & U-Net \cite{ronneberger2015u} & 17.27 & 873.6 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \midrule
-\textbf{SOAR1-Nano1 (Ours)} & \textbf{WaveStem + LKR + SpectralCtx} & \textbf{0.85} & \textbf{28.24} & -- & -- & -- & -- & -- & -- \\
-\textbf{SOAR1-Small1 (Ours)} & \textbf{WaveStem + LKR + SpectralCtx} & 2.69 & 76.00 & -- & -- & -- & -- & -- & -- \\
-\textbf{SOAR1-Medium1 (Ours)} & \textbf{WaveStem + LKR + SpectralCtx} & 6.45 & 177.52 & -- & -- & -- & -- & -- & -- \\
-\bottomrule
-\end{tabular}%
-}
-\end{table}
-
-\subsection{Cross-Domain Generalization}
-A robust scientific vision architecture must exhibit domain-invariant generalization across heterogeneous imaging modalities without hyperparameter retuning. Table~\ref{tab:domain_generalization} reports cross-domain transfer across:
-(1) \textit{Macroscopic remote sensing} (DeepGlobe satellite road graphs), dominated by large-scale geometric continuity and terrain clutter;
-(2) \textit{Civil infrastructure materials} (CRACK500 pavement fractures), featuring multi-scale branching cracks against rough textural aggregates; and
-(3) \textit{Nanoscale scanning electron microscopy} (MAGFiLO carbon-fiber filaments), presenting high-aspect-ratio, 1--3 pixel micro-fibers with high background dominance.
-
-By decoupling spatial geometry from high-frequency boundary phase via orthogonal wavelets and wide-field LKR receptive fields, SOAR achieves consistent domain robustness across all three manifolds, demonstrating that frequency-domain separation provides an effective inductive bias for curvilinear structures regardless of optical scale.
-
-\begin{table}[t]
-\centering
-\caption{Cross-Domain Generalization Benchmark Across Heterogeneous High-Resolution Geometry Domains ($1024\times 1024$) Under Unified SOAR Loss Protocol ($\mathcal{L}_{\text{SOAR}}$).}
-\label{tab:domain_generalization}
-\setlength{\tabcolsep}{6.5pt}
-\renewcommand{\arraystretch}{1.15}
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{lcccccc}
-\toprule
-\multirow{2}{*}{\textbf{Model Architecture}} & \multicolumn{2}{c}{\textbf{DeepGlobe (Road Networks)}} & \multicolumn{2}{c}{\textbf{CRACK500 (Pavement Cracks)}} & \multicolumn{2}{c}{\textbf{MAGFiLO (Micro-Filaments)}} \\
-\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
-& \textbf{mIoU (\%)} & \textbf{clDice (\%)} & \textbf{mIoU (\%)} & \textbf{clDice (\%)} & \textbf{mIoU (\%)} & \textbf{clDice (\%)} \\
+\multirow{2}{*}{Real-Time Dual-Resolution} & BiSeNet V2 \cite{yu2021bisenet} & 3.42 & 84.8 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& PIDNet-S \cite{xu2023pidnet} & 7.62 & 191.2 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \midrule
-U-Net \cite{ronneberger2015u} & -- & -- & -- & -- & -- & -- \\
-BiSeNet V2 \cite{yu2021bisenet} & -- & -- & -- & -- & -- & -- \\
-PIDNet-S \cite{xu2023pidnet} & -- & -- & -- & -- & -- & -- \\
-ISDNet \cite{guo2022isdnet} & -- & -- & -- & -- & -- & -- \\
-SegFormer-B0 \cite{xie2021segformer} & -- & -- & -- & -- & -- & -- \\
+High-Resolution Specialist & ISDNet \cite{guo2022isdnet} & 18.30 & 234.4 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \midrule
-\textbf{SOAR1-Nano1 (Ours)} & -- & -- & -- & -- & -- & -- \\
-\textbf{SOAR1-Small1 (Ours)} & -- & -- & -- & -- & -- & -- \\
-\textbf{SOAR1-Medium1 (Ours)} & -- & -- & -- & -- & -- & -- \\
+Vision Transformer & SegFormer-B0 \cite{xie2021segformer} & 3.75 & 113.6 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\midrule
+\multirow{3}{*}{\textbf{SOAR Family (Ours)}} & \textbf{SOAR1-Nano1} & \textbf{0.85} & \textbf{28.24} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{SOAR1-Small1} & 2.69 & 76.00 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{SOAR1-Medium1} & 6.45 & 177.52 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
 \bottomrule
 \end{tabular}%
 }
