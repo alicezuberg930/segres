@@ -136,6 +136,7 @@ def parse_args(raw_args: Optional[List[str]] = None):
     val_parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device (cuda/cpu)")
     val_parser.add_argument("--workers", type=int, default=2, help="DataLoader workers")
     val_parser.add_argument("--save-dir", type=str, default=None, help="Directory to save validation visualizations")
+    val_parser.add_argument("--annotation-file", type=str, default=None, help="Optional COCO annotation file path")
     val_parser.add_argument("--in-channels", type=int, default=3, help="Input channels")
     val_parser.add_argument("--num-classes", type=int, default=None, help="Number of classes (auto-inferred from checkpoint or dataset)")
     val_parser.add_argument("--cache-ram", action="store_true", default=False, help="Enable in-memory RAM caching for validation dataset")
@@ -259,6 +260,7 @@ def validate(args):
     validator = BaseValidator(
         model=model,
         data_root=args.data,
+        annotation_file=args.annotation_file,
         img_size=img_size,
         device=args.device,
         num_workers=args.workers,

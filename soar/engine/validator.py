@@ -41,10 +41,12 @@ class BaseValidator:
         dataloader: Optional[DataLoader] = None,
         num_classes: int = 1,
         class_names: Optional[Dict[int, str]] = None,
+        annotation_file: Optional[str] = None,
         cache_ram: bool = False,
     ):
         self.model = model
         self.data_root = Path(data_root)
+        self.annotation_file = annotation_file
         self.img_size = img_size
         self.batch_size = 1
         self.num_classes = max(1, int(num_classes))
@@ -98,6 +100,7 @@ class BaseValidator:
             split=split,
             img_size=self.img_size,
             num_classes=self.num_classes,
+            annotation_file=self.annotation_file,
             augment=False,
             use_cache=True,
             auto=True,
