@@ -120,7 +120,7 @@ def parse_args(raw_args: Optional[List[str]] = None):
     train_parser.add_argument("--amp", action="store_true", default=True, help="Enable automatic mixed precision")
     train_parser.add_argument("--no-amp", dest="amp", action="store_false", help="Disable automatic mixed precision")
     train_parser.add_argument("--ema", action="store_true", help="Use exponential moving average")
-    train_parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume training from")
+    train_parser.add_argument("--resume", "--weights", dest="resume", type=str, default=None, help="Path to checkpoint to resume training from or initialize weights")
     train_parser.add_argument("--in-channels", type=int, default=3, help="Input image channels")
     train_parser.add_argument("--num-classes", type=int, default=None, help="Number of classes (auto-detected from dataset if omitted)")
     train_parser.add_argument("--annotation-file", type=str, default=None, help="Optional COCO annotation file path")
