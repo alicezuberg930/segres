@@ -5,11 +5,31 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class SafeBatchNorm2d(nn.BatchNorm2d):
+    """
+    BatchNorm2d wrapper that safely handles B=1 micro-batches on 1x1 spatial features
+    without throwing PyTorch's 'Expected more than 1 value per channel' error.
+    """
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        if self.training and (input.numel() // input.shape[1] <= 1):
+            return F.batch_norm(
+                input,
+                self.running_mean if self.track_running_stats else None,
+                self.running_var if self.track_running_stats else None,
+                self.weight,
+                self.bias,
+                False,
+                self.momentum,
+                self.eps,
+            )
+        return super().forward(input)
+
+
 class ConvBNReLU(nn.Module):
     def __init__(self, in_chan: int, out_chan: int, ks: int = 3, stride: int = 1, padding: int = 1):
         super().__init__()
         self.conv = nn.Conv2d(in_chan, out_chan, kernel_size=ks, stride=stride, padding=padding, bias=False)
-        self.bn = nn.BatchNorm2d(out_chan)
+        self.bn = SafeBatchNorm2d(out_chan)
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -124,7 +144,7 @@ class CEBlock(nn.Module):
     def __init__(self, in_chan: int = 128):
         super().__init__()
         self.gap = nn.AdaptiveAvgPool2d(1)
-        self.bn = nn.BatchNorm2d(in_chan)
+        self.bn = SafeBatchNorm2d(in_chan)
         self.conv_1x1 = ConvBNReLU(in_chan, in_chan, 1, padding=0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
