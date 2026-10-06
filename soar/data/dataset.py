@@ -355,24 +355,48 @@ class SegmentationDataset(Dataset):
             sub_aliases = ["val2017", "val", "valid", "validation"]
         elif sub in ("train", "training"):
             sub_aliases = ["train2017", "train", "training"]
+        elif sub in ("test", "testing"):
+            sub_aliases = ["test2017", "test", "testing"]
+
+        search_roots = [self.data_root]
+        if self.data_root.parent != self.data_root:
+            search_roots.append(self.data_root.parent)
+        if self.image_dir != self.data_root and self.image_dir.parent != self.image_dir:
+            search_roots.append(self.image_dir.parent)
 
         candidate_files = []
-        for s in sub_aliases:
+        for root in search_roots:
+            for s in sub_aliases:
+                candidate_files.extend([
+                    root / "annotations" / f"magfilo_{s}.json",
+                    root / "annotations" / f"instances_{s}.json",
+                    root / "annotations" / f"{s}.json",
+                    root / f"magfilo_{s}.json",
+                    root / f"instances_{s}.json",
+                    root / f"{s}.json",
+                    root / s / "annotations.json",
+                ])
             candidate_files.extend([
-                self.data_root / "annotations" / f"instances_{s}.json",
-                self.data_root / f"instances_{s}.json",
-                self.data_root / "annotations" / f"{s}.json",
-                self.data_root / f"{s}.json",
-                self.data_root / s / "annotations.json",
+                root / "annotations" / "magfilo_full_coco_v1.0.json",
+                root / "annotations.json",
+                root / "train.json",
             ])
-        candidate_files.extend([
-            self.data_root / "annotations.json",
-            self.data_root / "train.json",
-        ])
+
         for candidate in candidate_files:
             if candidate.exists():
+                print(f"[Dataset] Auto-discovered annotation file: {candidate}")
                 self._load_coco_annotations(candidate)
                 return
+
+        # Fallback glob search for any json matching split
+        for root in search_roots:
+            if root.is_dir():
+                for s in sub_aliases:
+                    for cand in root.glob(f"**/*{s}*.json"):
+                        if cand.is_file():
+                            print(f"[Dataset] Auto-discovered annotation file via glob: {cand}")
+                            self._load_coco_annotations(cand)
+                            return
 
     def _load_coco_annotations(self, ann_path: Path) -> None:
         """Parse COCO polygon structure."""
