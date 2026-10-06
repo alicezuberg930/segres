@@ -43,6 +43,7 @@ class BaseValidator:
         class_names: Optional[Dict[int, str]] = None,
         annotation_file: Optional[str] = None,
         cache_ram: bool = False,
+        samples: Optional[int] = None,
     ):
         self.model = model
         self.data_root = Path(data_root)
@@ -56,6 +57,7 @@ class BaseValidator:
         self._dataloader = dataloader
         self.class_names = class_names or {}
         self.cache_ram = bool(cache_ram)
+        self.samples = samples
         if not self.class_names and dataloader is not None:
             ds = getattr(dataloader, "dataset", None)
             while hasattr(ds, "dataset"):
@@ -105,6 +107,7 @@ class BaseValidator:
             use_cache=True,
             auto=True,
             cache_ram=self.cache_ram,
+            samples=self.samples,
         )
 
         if self.cache_ram:

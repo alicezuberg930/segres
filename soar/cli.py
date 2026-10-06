@@ -146,6 +146,7 @@ def parse_args(raw_args: Optional[List[str]] = None):
     val_parser.add_argument("--num-classes", type=int, default=None, help="Number of classes (auto-inferred from checkpoint or dataset)")
     val_parser.add_argument("--split", type=str, default=None, help="Dataset split ('val', 'test', 'train'). Auto-detected if omitted.")
     val_parser.add_argument("--cache-ram", action="store_true", default=False, help="Enable in-memory RAM caching for validation dataset")
+    val_parser.add_argument("--samples", type=int, default=None, help="Limit validation to first N samples for quick checks")
 
     # -------------------------------------------------------------
     # Predict command
@@ -273,6 +274,7 @@ def validate(args):
         save_dir=args.save_dir,
         num_classes=num_classes,
         cache_ram=getattr(args, "cache_ram", False),
+        samples=getattr(args, "samples", None),
     )
 
     split = getattr(args, "split", None)
