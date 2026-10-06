@@ -359,10 +359,19 @@ class SegmentationDataset(Dataset):
             sub_aliases = ["test2017", "test", "testing"]
 
         search_roots = [self.data_root]
-        if self.data_root.parent != self.data_root:
-            search_roots.append(self.data_root.parent)
-        if self.image_dir != self.data_root and self.image_dir.parent != self.image_dir:
-            search_roots.append(self.image_dir.parent)
+        curr = self.data_root
+        for _ in range(3):
+            if curr.parent != curr:
+                curr = curr.parent
+                search_roots.append(curr)
+
+        if self.image_dir not in search_roots:
+            curr = self.image_dir
+            search_roots.append(curr)
+            for _ in range(3):
+                if curr.parent != curr:
+                    curr = curr.parent
+                    search_roots.append(curr)
 
         candidate_files = []
         for root in search_roots:
