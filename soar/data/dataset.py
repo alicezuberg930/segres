@@ -103,16 +103,16 @@ class SegmentationDataset(Dataset):
             else:
                 self.mask_preprocessor = None
         else:
-            auto_mode = auto if not self.is_train else False
-            self.preprocessor = (
-                get_training_preprocessor(img_size, auto=auto_mode)
+            cfg = (
+                PreprocessConfig.standard_training(img_size=img_size)
                 if self.is_train
-                else get_validation_preprocessor(img_size, auto=auto_mode)
+                else PreprocessConfig.standard_validation(img_size=img_size)
             )
+            self.preprocessor = build_preprocessor_from_config(cfg)
             self.mask_preprocessor = get_mask_preprocessor(
-                img_size,
-                auto=auto_mode,
-                scaleup=self.is_train,
+                img_size=img_size,
+                auto=False,
+                scaleup=True,
             )
 
         # File directory indexing

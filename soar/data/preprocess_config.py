@@ -106,7 +106,7 @@ class PreprocessConfig:
     
     @classmethod
     def standard_validation(cls, img_size: Tuple[int, int] = (1024, 1024)) -> "PreprocessConfig":
-        """Standard validation: no augmentation, only geometric if needed."""
+        """Standard validation: no augmentation, geometric letterboxing matching training resolution."""
         return cls(
             canonical=CanonicalConfig(),
             geometric=GeometricConfig(
@@ -115,8 +115,8 @@ class PreprocessConfig:
                 target_size=img_size,
                 keep_native_resolution=False,
                 letterbox=True,
-                auto=True,  # Efficient rectangular inference
-                scaleup=False,  # Only scale down for better mAP
+                auto=False,
+                scaleup=True,
                 center=True,
                 flip_horizontal=False,
                 flip_vertical=False,

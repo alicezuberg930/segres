@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..models import SegmentationModel
 from ..data import SegmentationDataset, collate_fn
+from ..data.preprocess_config import PreprocessConfig
 from ..losses import SegmentationLoss as CompositeSegmentationLoss
 from ..losses.structure import soft_skeletonize
 
@@ -42,6 +43,7 @@ class BaseValidator:
         num_classes: int = 1,
         class_names: Optional[Dict[int, str]] = None,
         annotation_file: Optional[str] = None,
+        preprocess_config: Optional[PreprocessConfig] = None,
         cache_ram: bool = False,
         samples: Optional[int] = None,
     ):
@@ -56,6 +58,7 @@ class BaseValidator:
         self.save_dir = Path(save_dir) if save_dir else None
         self._dataloader = dataloader
         self.class_names = class_names or {}
+        self.preprocess_config = preprocess_config
         self.cache_ram = bool(cache_ram)
         self.samples = samples
         if not self.class_names and dataloader is not None:
@@ -97,6 +100,10 @@ class BaseValidator:
 
     def setup_data(self, split: str = "val"):
         """Setup validation data loader if not externally provided."""
+        prep_cfg = self.preprocess_config
+        if prep_cfg is None:
+            prep_cfg = PreprocessConfig.standard_validation(img_size=self.img_size)
+
         self.dataset = SegmentationDataset(
             data_root=self.data_root,
             split=split,
@@ -105,7 +112,8 @@ class BaseValidator:
             annotation_file=self.annotation_file,
             augment=False,
             use_cache=True,
-            auto=True,
+            auto=False,
+            preprocess_config=prep_cfg,
             cache_ram=self.cache_ram,
             samples=self.samples,
         )
