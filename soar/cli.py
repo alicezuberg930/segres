@@ -147,6 +147,8 @@ def parse_args(raw_args: Optional[List[str]] = None):
     val_parser.add_argument("--num-classes", type=int, default=None, help="Number of classes (auto-inferred from checkpoint or dataset)")
     val_parser.add_argument("--split", type=str, default=None, help="Dataset split ('val', 'test', 'train'). Auto-detected if omitted.")
     val_parser.add_argument("--cache-ram", action="store_true", default=False, help="Enable in-memory RAM caching for validation dataset")
+    val_parser.add_argument("--samples", type=int, default=None, help="Limit validation to first N samples for quick checks")
+    val_parser.add_argument("--preprocess-mode", type=str, default="standard", choices=["minimal", "standard", "native"], help="Preprocessing mode matching training pipeline")
 
     # -------------------------------------------------------------
     # Predict command
@@ -159,6 +161,7 @@ def parse_args(raw_args: Optional[List[str]] = None):
     predict_parser.add_argument("--imgsz", "--img-size", dest="img_size", type=int, nargs="+", default=[2048, 2048], help="Inference resolution")
     predict_parser.add_argument("--split", type=str, default="test", help="Dataset split ('test', 'val', 'train')")
     predict_parser.add_argument("--samples", type=int, default=None, help="Limit to first N samples")
+    predict_parser.add_argument("--preprocess-mode", type=str, default="standard", choices=["minimal", "standard", "native"], help="Preprocessing mode matching training pipeline")
     predict_parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device (cuda/cpu)")
     predict_parser.add_argument("--workers", type=int, default=2, help="DataLoader workers")
     predict_parser.add_argument("--threshold", type=float, default=0.5, help="Prediction threshold")
@@ -266,6 +269,13 @@ def validate(args):
     device = torch.device(args.device if (args.device == "cuda" and torch.cuda.is_available()) else "cpu")
     load_checkpoint(args.weights, model, device=str(device))
 
+    if getattr(args, "preprocess_mode", "standard") == "minimal":
+        preprocess_config = PreprocessConfig.minimal()
+    elif getattr(args, "preprocess_mode", "standard") == "native":
+        preprocess_config = PreprocessConfig.native_resolution()
+    else:
+        preprocess_config = PreprocessConfig.standard_validation(img_size=img_size)
+
     validator = BaseValidator(
         model=model,
         data_root=args.data,
@@ -275,7 +285,9 @@ def validate(args):
         num_workers=args.workers,
         save_dir=args.save_dir,
         num_classes=num_classes,
+        preprocess_config=preprocess_config,
         cache_ram=getattr(args, "cache_ram", False),
+        samples=getattr(args, "samples", None),
     )
 
     split = getattr(args, "split", None)
@@ -315,6 +327,13 @@ def predict(args):
     device = torch.device(args.device if (args.device == "cuda" and torch.cuda.is_available()) else "cpu")
     load_checkpoint(args.weights, model, device=str(device))
 
+    if getattr(args, "preprocess_mode", "standard") == "minimal":
+        preprocess_config = PreprocessConfig.minimal()
+    elif getattr(args, "preprocess_mode", "standard") == "native":
+        preprocess_config = PreprocessConfig.native_resolution()
+    else:
+        preprocess_config = PreprocessConfig.standard_validation(img_size=img_size)
+
     predictor = BasePredictor(
         model=model,
         data_root=args.data,
@@ -326,6 +345,7 @@ def predict(args):
         threshold=args.threshold,
         output_dir=output_dir,
         weights_name=Path(args.weights).stem,
+        preprocess_config=preprocess_config,
     )
 
     predictor.setup_data(split=args.split, samples=args.samples)

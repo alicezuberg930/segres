@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 from ..models import SegmentationModel
 from ..data import SegmentationDataset, collate_fn
+from ..data.preprocess_config import PreprocessConfig
 from ..losses.structure import soft_skeletonize
 from ..utils import binary_mask_to_rle
 
@@ -48,6 +49,7 @@ class BasePredictor:
         output_dir: str | Path = "predictions/soar",
         class_names: Optional[Dict[int, str]] = None,
         weights_name: str = "soar",
+        preprocess_config: Optional[PreprocessConfig] = None,
     ):
         self.model = model
         self.data_root = Path(data_root).resolve()
@@ -62,6 +64,7 @@ class BasePredictor:
         self.output_dir = Path(output_dir).resolve()
         self.class_names = class_names or {}
         self.weights_name = weights_name
+        self.preprocess_config = preprocess_config
 
         self.model.to(self.device)
         self.model.eval()
@@ -82,12 +85,17 @@ class BasePredictor:
 
     def setup_data(self, split: str = "test", samples: Optional[int] = None) -> None:
         """Setup inference data loader with optional ground truth annotations."""
+        prep_cfg = self.preprocess_config
+        if prep_cfg is None:
+            prep_cfg = PreprocessConfig.standard_validation(img_size=self.img_size)
+
         self.dataset = SegmentationDataset(
             data_root=self.data_root,
             annotation_file=str(self.annotation_file) if self.annotation_file else None,
             split=split,
             img_size=self.img_size,
             num_classes=self.num_classes,
+            preprocess_config=prep_cfg,
             samples=samples,
             augment=False,
             use_cache=False,
