@@ -59,6 +59,7 @@ class BaseTrainer:
         ema_decay: float = 0.9999,
         grad_clip: float = 2.0,
         save_interval: int = 5,
+        log_interval: int = 10,
         resume: Optional[str] = None,
         in_channels: int = 3,
         num_classes: int = 1,
@@ -124,6 +125,7 @@ class BaseTrainer:
         self.ema_decay = ema_decay
         self.grad_clip = grad_clip
         self.save_interval = save_interval
+        self.log_interval = max(1, int(log_interval))
         self.resume = resume
         self.in_channels = in_channels
 
@@ -541,10 +543,8 @@ class BaseTrainer:
             metrics = self.validator.validate()
             val_loss = metrics.get("loss", 0.0)
 
-            # In bảng tổng kết và lưu ảnh trực quan
+            # Save qualitative validation examples every epoch.
             if self.rank == 0:
-                self.validator.print_results(epoch=epoch + 1)
-                
                 try:
                     epoch_vis_dir = self.checkpoint_dir / "val_visualizations" / f"epoch_{epoch + 1}"
                     self.validator.save_dir = epoch_vis_dir
@@ -556,6 +556,68 @@ class BaseTrainer:
             return val_loss, metrics
 
         return 0.0, {}
+
+    def _should_log_epoch(self, epoch: int) -> bool:
+        """Return whether a zero-based epoch should emit a metric summary."""
+        epoch_number = epoch + 1
+        return epoch_number % self.log_interval == 0 or epoch_number == self.epochs
+
+    def _print_epoch_summary(
+        self,
+        epoch: int,
+        train_loss: float,
+        val_loss: float,
+        metrics: Dict[str, Any],
+        learning_rate: float,
+        is_best: bool,
+    ) -> None:
+        """Print the metrics needed to monitor a training run."""
+        if self.rank != 0:
+            return
+
+        epoch_number = epoch + 1
+        has_validation = self.val_loader is not None
+        metric_label = "mIoU" if len(metrics.get("class_ious", [])) > 1 else "IoU"
+
+        def metric_text(name: str) -> str:
+            if not has_validation:
+                return "-"
+            return f"{float(metrics.get(name, 0.0)):.5f}"
+
+        val_loss_text = f"{val_loss:.5f}" if has_validation else "-"
+        best_marker = " (new best)" if is_best else ""
+
+        print(f"\n{'=' * 126}")
+        print(
+            f"Training summary - epoch {epoch_number}/{self.epochs} "
+            f"(console interval: {self.log_interval})"
+        )
+        print(
+            f"{'Train Loss':>11} {'Val Loss':>11} {'LR':>11} "
+            f"{metric_label:>9} {'Dice':>9} {'Prec':>9} {'Recall':>9} "
+            f"{'bIoU':>9} {'clDice':>9}"
+        )
+        print(f"{'-' * 126}")
+        print(
+            f"{train_loss:>11.5f} {val_loss_text:>11} {learning_rate:>11.3e} "
+            f"{metric_text('iou'):>9} {metric_text('dice'):>9} "
+            f"{metric_text('precision'):>9} {metric_text('recall'):>9} "
+            f"{metric_text('boundary_iou'):>9} {metric_text('cldice'):>9}"
+        )
+        print(
+            f"Best so far: epoch {self.best_epoch}/{self.epochs}, "
+            f"loss={self.best_loss:.5f}{best_marker}"
+        )
+
+        class_ious = metrics.get("class_ious", [])
+        if has_validation and len(class_ious) > 1:
+            per_class = []
+            for class_index, class_iou in enumerate(class_ious):
+                class_name = self.class_names.get(class_index, f"Class_{class_index}")
+                per_class.append(f"{class_name}={float(class_iou):.5f}")
+            print("Per-class IoU: " + " | ".join(per_class))
+
+        print(f"{'=' * 126}\n", flush=True)
 
     def _plot_results(self):
         """Plot results.png training metric curves."""
@@ -685,6 +747,16 @@ class BaseTrainer:
                 self.best_loss = eval_loss
                 self.best_epoch = epoch + 1
                 self.best_metrics = dict(metrics) if metrics else {"loss": eval_loss}
+
+            if self.rank == 0 and self._should_log_epoch(epoch):
+                self._print_epoch_summary(
+                    epoch=epoch,
+                    train_loss=train_loss,
+                    val_loss=val_loss,
+                    metrics=metrics,
+                    learning_rate=lr_now,
+                    is_best=is_best,
+                )
 
             self.save_checkpoint(epoch, eval_loss, is_best)
 
