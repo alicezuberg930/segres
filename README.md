@@ -110,9 +110,18 @@ SOAR1 scales its capacity through **Resolution-Aware Compound Scaling**, allocat
 ```bash
 git clone https://github.com/pomagrenate/segres.git
 cd segres
-pip install -r requirements.txt
-pip install -e .
+python -m pip install --upgrade pip
+python -m pip install -r requirements-cu124.txt
+python -m pip install -r requirements.txt
+python -m pip install --no-deps -e .
+python -m pip check
+python -c "import torch; print(f'torch={torch.__version__}, CUDA runtime={torch.version.cuda}, available={torch.cuda.is_available()}'); assert torch.version.cuda == '12.4' and torch.cuda.is_available()"
 ```
+
+The CUDA runtime is intentionally pinned to PyTorch `2.6.0` and torchvision
+`0.21.0`, the final official release pair with CUDA 12.4 wheels. The last
+command verifies that the active Python environment can actually use CUDA
+before training begins.
 
 ### 2. Training
 

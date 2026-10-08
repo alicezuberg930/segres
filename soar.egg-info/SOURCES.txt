@@ -36,6 +36,7 @@ soar/tools/__init__.py
 soar/tools/rasterize.py
 soar/utils/__init__.py
 soar/utils/checkpoint.py
+soar/utils/device.py
 soar/utils/ema.py
 soar/utils/metrics.py
 soar/utils/profile.py
@@ -43,5 +44,6 @@ soar/utils/rle.py
 tests/test_benchmarks.py
 tests/test_dataloader_optimization.py
 tests/test_dataset_yaml.py
+tests/test_device_selection.py
 tests/test_losses.py
 tests/test_models.py

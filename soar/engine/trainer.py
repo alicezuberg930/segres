@@ -23,8 +23,11 @@ from .validator import BaseValidator
 from ..losses import SegmentationLoss as CompositeSegmentationLoss
 from ..models import SegmentationModel, build_model
 from ..utils import (
+    DeviceSelection,
     ModelEMA,
+    announce_device,
     load_checkpoint,
+    resolve_device,
     save_checkpoint,
     profile_model,
     format_latex_row_table1,
@@ -101,7 +104,8 @@ class BaseTrainer:
         self.epochs = epochs
         self.lr = lr
         self.weight_decay = weight_decay
-        self.device = torch.device(device if (device == "cuda" and torch.cuda.is_available()) else "cpu")
+        self.device_selection = resolve_device(device)
+        self.device = self.device_selection.device
 
         # Automatically determine model_name for checkpointing and metrics
         if isinstance(model_cfg, nn.Module):
@@ -152,9 +156,19 @@ class BaseTrainer:
         self.world_size = int(os.environ.get("WORLD_SIZE", 1))
 
         if self.use_ddp:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Distributed training requires an available CUDA device.")
             torch.cuda.set_device(self.local_rank)
             self.device = torch.device(f"cuda:{self.local_rank}")
+            self.device_selection = DeviceSelection(
+                requested=self.device_selection.requested,
+                device=self.device,
+                fell_back=False,
+            )
             dist.init_process_group(backend="nccl", init_method="env://")
+
+        if self.rank == 0:
+            announce_device(self.device_selection)
 
         # Metric history for results.png
         self.history: Dict[str, List[float]] = {
